@@ -55,6 +55,17 @@ def init_workspace(root: Path, *, force: bool) -> dict[str, object]:
         gitignore.write_text(stanza.lstrip(), encoding="utf-8")
         created.append(str(gitignore))
 
+    pytest_ini = root / "pytest.ini"
+    if not pytest_ini.exists():
+        pytest_ini.write_text(
+            "[pytest]\n"
+            "# Greenfield layout: tests can `import app` when code lives under src/\n"
+            "pythonpath = src\n"
+            "testpaths = tests\n",
+            encoding="utf-8",
+        )
+        created.append(str(pytest_ini))
+
     return {
         "root": str(root),
         "created": created,

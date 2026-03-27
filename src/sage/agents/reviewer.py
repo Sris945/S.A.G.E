@@ -68,13 +68,32 @@ def _short_manifest_ok(file: str) -> bool:
     )
 
 
+def _is_tests_package_file(file: str) -> bool:
+    fp = str(file).replace("\\", "/")
+    pl = Path(fp)
+    return (
+        pl.suffix.lower() == ".py"
+        and pl.name.startswith("test_")
+        and (fp.startswith("tests/") or "/tests/" in f"/{fp}/")
+    )
+
+
+def _reviewer_skip_llm_log_line(file: str) -> str:
+    """If non-empty, skip LLM review and log this line (models hallucinate on manifests/tests)."""
+    if _short_manifest_ok(file):
+        return "Dependency manifest — static + goal checks only (LLM skipped)."
+    if _is_tests_package_file(file):
+        return "pytest file — static + goal checks only (LLM skipped)."
+    return ""
+
+
 def _static_checks(file: str, content: str) -> list[str]:
     """Fast local checks — no model call needed."""
     issues = []
     lines = content.splitlines()
     if not content.strip():
         issues.append("File is empty or whitespace-only.")
-    if len(lines) < 3 and not _short_manifest_ok(file):
+    if len(lines) < 3 and not _short_manifest_ok(file) and not _is_tests_package_file(file):
         issues.append(f"File is suspiciously short ({len(lines)} lines).")
     if file.endswith(".py"):
         try:
@@ -103,6 +122,10 @@ def _goal_alignment_issues(task_description: str, file: str, content: str) -> li
     c = (content or "").lower()
     fp = (file or "").replace("\\", "/")
     issues: list[str] = []
+
+    if _is_tests_package_file(fp):
+        # Stack tokens often live in src/app.py, not in every test line — pytest proves behavior.
+        return issues
 
     if fp.endswith("requirements.txt") or fp.endswith("pyproject.toml"):
         if "fastapi" in t:
@@ -213,15 +236,13 @@ class ReviewerAgent:
             )
             return ReviewResult(passed=False, score=0.0, verdict="FAIL", issues=goal_issues)
 
-        if _short_manifest_ok(str(path)):
-            # Small models often mis-read .txt manifests as "empty" in LLM review.
-            print_agent_line(
-                "Reviewer", "Dependency manifest — static + goal checks only (LLM skipped)."
-            )
+        skip_line = _reviewer_skip_llm_log_line(str(path))
+        if skip_line:
+            print_agent_line("Reviewer", skip_line)
             _emit(
                 "observation",
                 severity="low",
-                content="Reviewer LLM skipped for known manifest filename.",
+                content="Reviewer LLM skipped (manifest or pytest file).",
             )
             return ReviewResult(
                 passed=True,
@@ -229,7 +250,7 @@ class ReviewerAgent:
                 verdict="PASS",
                 issues=[],
                 suggestion="",
-                model_used="(manifest)",
+                model_used="(static-only)",
             )
 
         # ── LLM Review ────────────────────────────────────────────────────────

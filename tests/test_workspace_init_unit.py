@@ -8,6 +8,8 @@ def test_init_workspace_creates_sage_and_memory(tmp_path, monkeypatch):
     summary = init_workspace(tmp_path, force=False)
     assert (tmp_path / ".sage" / "rules.md").is_file()
     assert (tmp_path / "memory").is_dir()
+    assert (tmp_path / "pytest.ini").is_file()
+    assert "pythonpath = src" in (tmp_path / "pytest.ini").read_text(encoding="utf-8")
     assert summary["root"] == str(tmp_path.resolve())
     assert any(".sage" in str(p) for p in summary["created"])
 
