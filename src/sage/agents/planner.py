@@ -15,6 +15,7 @@ Pipeline:
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 try:
@@ -63,6 +64,54 @@ def _build_system_prompt(template: str, memory: dict, fix_patterns: list) -> str
 
 
 _VALID_AGENTS = frozenset({"coder", "architect", "reviewer", "test_engineer"})
+
+# Stronger than py_compile alone when the user asked for a real HTTP stack.
+_FASTAPI_APP_VERIFY = (
+    "python -m py_compile src/app.py && python -c "
+    "\"import sys; sys.path.insert(0, 'src'); import app; "
+    "assert getattr(app, 'app', None) is not None\""
+)
+
+_REQ_FASTAPI_SNIPPET = (
+    'python -c "from pathlib import Path; '
+    "p=Path('requirements.txt'); "
+    "assert p.exists(), 'missing requirements.txt'; "
+    "t=p.read_text(errors='ignore').lower(); "
+    "assert 'fastapi' in t and 'uvicorn' in t, 'need fastapi and uvicorn in requirements'\""
+)
+
+
+def _fallback_verification_for_goal(goal: str) -> str:
+    g = (goal or "").lower()
+    if "fastapi" in g or "/health" in g or " health" in g:
+        return _FASTAPI_APP_VERIFY
+    return "python -m py_compile src/app.py"
+
+
+def _postprocess_task_nodes(nodes: list[TaskNode], user_goal: str) -> list[TaskNode]:
+    """
+    Patch weak model output: py_compile-only implementation tasks for FastAPI goals,
+    and empty/weak requirements checks.
+    """
+    g = (user_goal or "").lower()
+    out: list[TaskNode] = []
+    for n in nodes:
+        nn = n
+        desc_l = (n.description or "").lower()
+        merged = f"{g} {desc_l}"
+        v = (nn.verification or "").strip()
+
+        if nn.assigned_agent == "coder":
+            if "requirements" in desc_l and "fastapi" in merged:
+                if not v or ("assert" not in v and "fastapi" not in v.lower()):
+                    nn = replace(nn, verification=_REQ_FASTAPI_SNIPPET)
+                    v = nn.verification
+            if "fastapi" in merged and v and "py_compile" in v and "import app" not in v:
+                if "src/app.py" in v or "src/app.py" in desc_l:
+                    if "&&" not in v:
+                        nn = replace(nn, verification=_FASTAPI_APP_VERIFY)
+        out.append(nn)
+    return out
 
 
 def _normalize_assigned_agent(raw: object) -> str:
@@ -273,6 +322,7 @@ class PlannerAgent:
                     description=prompt,
                     dependencies=[],
                     assigned_agent="coder",
+                    verification=_fallback_verification_for_goal(prompt),
                     task_complexity_score=_compute_task_complexity_score(prompt),
                     epistemic_flags=[],
                     status="pending",
@@ -313,6 +363,7 @@ class PlannerAgent:
                     description=prompt,
                     dependencies=[],
                     assigned_agent="coder",
+                    verification=_fallback_verification_for_goal(prompt),
                     task_complexity_score=_compute_task_complexity_score(prompt),
                     epistemic_flags=[],
                     status="pending",
@@ -340,6 +391,7 @@ class PlannerAgent:
                     description=prompt,
                     dependencies=[],
                     assigned_agent="coder",
+                    verification=_fallback_verification_for_goal(prompt),
                     task_complexity_score=_compute_task_complexity_score(prompt),
                 )
             ]
@@ -404,6 +456,7 @@ class PlannerAgent:
                     description=prompt,
                     dependencies=[],
                     assigned_agent="coder",
+                    verification=_fallback_verification_for_goal(prompt),
                     task_complexity_score=_compute_task_complexity_score(prompt),
                 )
             ]
@@ -422,9 +475,12 @@ class PlannerAgent:
                     description=prompt,
                     dependencies=[],
                     assigned_agent="coder",
+                    verification=_fallback_verification_for_goal(prompt),
                     task_complexity_score=_compute_task_complexity_score(prompt),
                 )
             ]
+
+        nodes = _postprocess_task_nodes(nodes, prompt)
 
         print_agent_line("Planner", f"DAG ready — {len(nodes)} task(s):")
         for n in nodes:

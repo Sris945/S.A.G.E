@@ -80,6 +80,46 @@ def _coerce_issues(val) -> list[str]:
     return [str(val)]
 
 
+def _goal_alignment_issues(task_description: str, file: str, content: str) -> list[str]:
+    """
+    Deterministic checks that the artifact matches explicit stack / route keywords
+    in the task text (product-grade bar; catches "Hello World" pretending to be FastAPI).
+    """
+    t = (task_description or "").lower()
+    c = (content or "").lower()
+    fp = (file or "").replace("\\", "/")
+    issues: list[str] = []
+
+    if fp.endswith("requirements.txt") or fp.endswith("pyproject.toml"):
+        if "fastapi" in t:
+            if "fastapi" not in c:
+                issues.append(
+                    "Task requires FastAPI but the dependency manifest does not list fastapi."
+                )
+            if "uvicorn" not in c:
+                issues.append(
+                    "Expected uvicorn (or uvicorn[standard]) alongside FastAPI — not found."
+                )
+        return issues
+
+    if not fp.endswith(".py"):
+        return issues
+
+    if "fastapi" in t:
+        if "fastapi" not in c:
+            issues.append("Task calls for FastAPI but this file does not use fastapi.")
+        if any(h in t for h in ("/health", "health endpoint", "health route", "health check")):
+            if "/health" not in c and "health" not in c:
+                issues.append(
+                    "Task requires a /health endpoint but no health route or handler is present."
+                )
+    if "flask" in t and "flask" not in c:
+        issues.append("Task calls for Flask but this file does not use flask.")
+    if "django" in t and "django" not in c:
+        issues.append("Task calls for Django but this file does not use django.")
+    return issues
+
+
 class ReviewerAgent:
     def __init__(self):
         self.router = ModelRouter()
@@ -148,6 +188,17 @@ class ReviewerAgent:
             )
             return ReviewResult(passed=False, score=0.0, verdict="FAIL", issues=issues)
 
+        goal_issues = _goal_alignment_issues(str(task.get("description", "")), file, content)
+        if goal_issues:
+            print_agent_line("Reviewer", f"Goal alignment FAILED: {goal_issues[0]}")
+            _emit(
+                "risk",
+                severity="high",
+                content=goal_issues[0],
+                requires_orchestrator_action=True,
+            )
+            return ReviewResult(passed=False, score=0.0, verdict="FAIL", issues=goal_issues)
+
         # ── LLM Review ────────────────────────────────────────────────────────
         model = self.router.select(
             "reviewer",
@@ -188,19 +239,21 @@ class ReviewerAgent:
                 timeout_s=None,
             )
         except (OllamaTimeout, RuntimeError, Exception) as e:
-            # Fall back to static checks only (already executed above).
-            print_agent_line("Reviewer", f"Model call failed: {e} — using static checks only.")
+            print_agent_line(
+                "Reviewer", f"Model call failed: {e} — failing review (no silent pass)."
+            )
             _emit(
-                "observation",
-                severity="low",
-                content=f"LLM review skipped due to model failure: {str(e)[:800]}",
+                "risk",
+                severity="high",
+                content=f"Reviewer LLM unavailable: {str(e)[:800]}",
+                requires_orchestrator_action=True,
             )
             return ReviewResult(
-                passed=True,
-                score=0.5,
-                verdict="PASS",
-                issues=[],
-                suggestion="LLM review skipped (model unavailable; static checks only)",
+                passed=False,
+                score=0.0,
+                verdict="FAIL",
+                issues=[f"Reviewer model error: {e}"],
+                suggestion="Retry when the model is reachable, or inspect logs.",
             )
 
         msg = response.get("message") or {}
@@ -208,19 +261,19 @@ class ReviewerAgent:
         try:
             data = parse_json_object(raw)
         except (ValueError, json.JSONDecodeError, TypeError) as e:
-            # Fall back to static checks only (already executed above).
-            print_agent_line("Reviewer", f"Parse failed: {e} — using static checks only.")
+            print_agent_line("Reviewer", f"Parse failed: {e} — failing review.")
             _emit(
-                "observation",
-                severity="low",
-                content=f"LLM verdict parse failed; static checks only: {str(e)[:800]}",
+                "risk",
+                severity="high",
+                content=f"Reviewer verdict not valid JSON: {str(e)[:800]}",
+                requires_orchestrator_action=True,
             )
             return ReviewResult(
-                passed=True,
-                score=0.5,
-                verdict="PASS",
-                issues=[],
-                suggestion="LLM verdict parse failed (static checks only)",
+                passed=False,
+                score=0.0,
+                verdict="FAIL",
+                issues=[f"Reviewer output not parseable: {e}"],
+                suggestion="Model must return ONLY JSON verdict keys: verdict, score, issues, suggestion.",
             )
 
         verdict = str(data.get("verdict", "PASS")).upper()
