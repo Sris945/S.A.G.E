@@ -113,4 +113,6 @@ def print_chat_enter_banner(*, use_rich: bool, session_id: str = "") -> None:
         )
         get_console().print()
     else:
-        print("[SAGE] Chat mode — session saved to .sage/chat_sessions/; /back or /agent for build; /exit to quit.")
+        print(
+            "[SAGE] Chat mode — session saved to .sage/chat_sessions/; /back or /agent for build; /exit to quit."
+        )

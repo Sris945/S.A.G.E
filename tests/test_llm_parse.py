@@ -16,7 +16,7 @@ def test_parse_json_value_prose_prefix_and_suffix():
 
 
 def test_parse_json_object_nested():
-    raw = "```json\n{\"x\": true}\n```\n"
+    raw = '```json\n{"x": true}\n```\n'
     assert parse_json_object(raw) == {"x": True}
 
 

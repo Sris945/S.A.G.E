@@ -1074,9 +1074,7 @@ def execute_agent(state: SAGEState) -> SAGEState:
             task={
                 "id": task.id,
                 "description": task.description,
-                "task_complexity_score": float(
-                    getattr(task, "task_complexity_score", 0.0) or 0.0
-                ),
+                "task_complexity_score": float(getattr(task, "task_complexity_score", 0.0) or 0.0),
             },
             memory=state["session_memory"],
             failure_count=attempt,
@@ -1085,7 +1083,9 @@ def execute_agent(state: SAGEState) -> SAGEState:
         )
         if te_result.get("status") == "skipped":
             task.status = "failed"
-            state["last_error"] = te_result.get("test_file") or "test_engineer skipped (source missing or non-Python)"
+            state["last_error"] = (
+                te_result.get("test_file") or "test_engineer skipped (source missing or non-Python)"
+            )
             return {
                 **state,
                 "task_dag": graph.to_dict(),

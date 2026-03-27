@@ -312,9 +312,7 @@ class CoderAgent:
                 "error": err,
             }
 
-        print_agent_line(
-            "Coder", f"PatchRequest ready → {patch_req.file} ({patch_req.operation})"
-        )
+        print_agent_line("Coder", f"PatchRequest ready → {patch_req.file} ({patch_req.operation})")
         if patch_req.epistemic_flags:
             print_agent_line("Coder", f"Flags: {', '.join(patch_req.epistemic_flags)}")
 

@@ -985,7 +985,7 @@ def cmd_shell(_args) -> None:
 
                         get_console().print(
                             "  [accent]Agent mode[/accent] [muted]— describe work in plain English or "
-                            "[/muted][accent]run \"…\"[/accent][muted]. Prior chat (after[/muted] "
+                            '[/muted][accent]run "…"[/accent][muted]. Prior chat (after[/muted] '
                             "[accent]chat[/accent][muted]) is prepended to the pipeline when "
                             "[/muted][accent]SAGE_CHAT_ATTACH_TO_RUN=1[/accent][muted] (default).[/muted]"
                         )
@@ -1276,12 +1276,16 @@ def cmd_prep(args) -> None:
         f"  [muted]OS[/muted] {prof.os_name}   [muted]RAM GiB[/muted] {prof.ram_gib}   "
         f"[muted]VRAM GiB[/muted] {prof.vram_gib}"
     )
-    c.print(f"  [muted]Tier[/muted] [brand]{sug['tier']}[/brand]   [muted]~pull GiB[/muted] {sug.get('estimated_pull_gib', '?')}")
+    c.print(
+        f"  [muted]Tier[/muted] [brand]{sug['tier']}[/brand]   [muted]~pull GiB[/muted] {sug.get('estimated_pull_gib', '?')}"
+    )
     c.print("  [muted]Pull (best effort, fits disk budget):[/muted]")
     for tag in sug.get("ollama_tags") or []:
         c.print(f"    [accent]ollama pull[/accent] {tag}")
     c.print()
-    c.print("  [muted]Write routing:[/muted] [accent]sage setup apply[/accent] [muted](merges into models.yaml)[/muted]")
+    c.print(
+        "  [muted]Write routing:[/muted] [accent]sage setup apply[/accent] [muted](merges into models.yaml)[/muted]"
+    )
     c.print(
         "  [muted]Real coding:[/muted] leave [accent]SAGE_MODEL_PROFILE[/accent] [muted]unset — "
         "the [accent]test[/accent] [muted]profile forces one tiny model (for CI only).[/muted]"

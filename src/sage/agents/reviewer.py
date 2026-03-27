@@ -79,6 +79,7 @@ def _coerce_issues(val) -> list[str]:
         return [str(x) for x in val]
     return [str(val)]
 
+
 class ReviewerAgent:
     def __init__(self):
         self.router = ModelRouter()

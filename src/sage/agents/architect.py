@@ -54,6 +54,7 @@ def _coerce_tech_decisions(val) -> dict:
         return {str(k): v for k, v in val.items()}
     return {}
 
+
 class ArchitectAgent:
     def __init__(self):
         self.router = ModelRouter()
@@ -112,7 +113,9 @@ class ArchitectAgent:
             failure_count=failure_count,
         )
         print_agent_line("Architect", f"Using model: {model}")
-        print_agent_line("Architect", f"Designing blueprint for: {task.get('description', '')[:80]}")
+        print_agent_line(
+            "Architect", f"Designing blueprint for: {task.get('description', '')[:80]}"
+        )
 
         _emit(
             "decision",
@@ -156,9 +159,7 @@ class ArchitectAgent:
                 timeout_s=None,
             )
         except (OllamaTimeout, RuntimeError, Exception) as e:
-            print_agent_line(
-                "Architect", f"Model call failed/timeout: {e} — skipping blueprint."
-            )
+            print_agent_line("Architect", f"Model call failed/timeout: {e} — skipping blueprint.")
             _emit(
                 "risk",
                 severity="high",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 def test_classify_off_is_always_code(monkeypatch) -> None:
     from sage.cli.shell_intent import ShellIntentKind, classify_shell_line_ex
 

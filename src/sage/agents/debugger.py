@@ -307,9 +307,7 @@ class DebuggerAgent:
                 "epistemic_flags": [],
             }
 
-        print_agent_line(
-            "Debugger", f"✓ Fix generated → {patch_req.file} ({patch_req.operation})"
-        )
+        print_agent_line("Debugger", f"✓ Fix generated → {patch_req.file} ({patch_req.operation})")
         print_agent_line("Debugger", f"Suspected cause: {data.get('suspected_cause', 'unknown')}")
 
         _emit(

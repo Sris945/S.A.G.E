@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from sage.cli.chat_session_store import append_turn, begin_chat_session, maybe_prepend_chat_transcript
+from sage.cli.chat_session_store import (
+    append_turn,
+    begin_chat_session,
+    maybe_prepend_chat_transcript,
+)
 
 
 def test_begin_and_append_and_prepend(monkeypatch, tmp_path) -> None:

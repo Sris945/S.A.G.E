@@ -78,7 +78,9 @@ def print_docs_links_footer() -> None:
     r = repo_url_effective()
     c = get_console()
     c.print()
-    c.print("  [muted]Documentation — set[/muted] [accent]SAGE_REPO_URL[/accent] [muted]if links should point at your fork.[/muted]")
+    c.print(
+        "  [muted]Documentation — set[/muted] [accent]SAGE_REPO_URL[/accent] [muted]if links should point at your fork.[/muted]"
+    )
     c.print(f"  [muted]Repository[/muted]  [link={r}]{r}[/link]")
     for label, path in (
         ("CLI (slash commands, prompt_toolkit)", "docs/CLI.md"),

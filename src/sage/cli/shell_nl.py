@@ -55,7 +55,7 @@ def run_shell_natural_language_goal(line: str, *, use_rich: bool) -> None:
                 Panel.fit(
                     "[muted]Running your request through the coding pipeline.[/muted]\n"
                     f"[accent]{preview}[/accent]\n"
-                    "[muted]Explicit[/muted] [accent]run \"…\"[/accent] [muted]for flags; "
+                    '[muted]Explicit[/muted] [accent]run "…"[/accent] [muted]for flags; '
                     "[muted]SAGE_SHELL_NL_AUTO=1[/muted] [muted]for autonomous mode; "
                     "[muted]SAGE_SHELL_NO_NL=1[/muted] [muted]to turn off NL routing.[/muted]",
                     title="[brand]SAGE[/brand] · goal",

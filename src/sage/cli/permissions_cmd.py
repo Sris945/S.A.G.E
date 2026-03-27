@@ -29,7 +29,9 @@ def cmd_permissions_show(args) -> None:
         lines.append(f"  - {b}")
     lines.append("")
     pf = policy_file_path()
-    lines.append(f"Policy file: {pf} {'(exists)' if pf.is_file() else '(none — use `sage permissions set …`)'}")
+    lines.append(
+        f"Policy file: {pf} {'(exists)' if pf.is_file() else '(none — use `sage permissions set …`)'}"
+    )
     lines.append("")
     lines.append(f"tool_policy={tool_policy_mode()}  [source: {tool_policy_source()}]")
     lines.append(
@@ -41,7 +43,9 @@ def cmd_permissions_show(args) -> None:
     lines.append(f"skills: {sk_disp}  [source: {skills_root_source()}]")
     lines.append("")
     lines.append("Change in this shell: `sage permissions set policy strict|standard`,")
-    lines.append("`sage permissions set workspace <path|clear>`, `sage permissions set skills <path|clear>`.")
+    lines.append(
+        "`sage permissions set workspace <path|clear>`, `sage permissions set skills <path|clear>`."
+    )
     lines.append("`sage permissions reset` removes the file and clears these env vars in-process.")
     if getattr(args, "json", False):
         print(
@@ -77,7 +81,9 @@ def cmd_permissions_set(args) -> None:
         data["tool_policy"] = value
         save_policy_file(data)
         os.environ["SAGE_TOOL_POLICY"] = value
-        print(f"[SAGE] tool_policy={value!r} — saved {policy_file_path_display()} and applied in this process.")
+        print(
+            f"[SAGE] tool_policy={value!r} — saved {policy_file_path_display()} and applied in this process."
+        )
         return
     if cmd == "workspace":
         raw = (args.value or "").strip()

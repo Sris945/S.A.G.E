@@ -11,12 +11,13 @@ from sage.cli.chat_ui import (
     print_conversation_info_box,
     print_user_line,
 )
+
 _MAX_TURNS = 24
 
 SAGE_CHAT_SYSTEM = (
     "You are a helpful assistant inside SAGE (Self-improving Autonomous Generation Engine), "
     "a terminal coding agent. Keep answers concise. For repository work, users should describe "
-    "goals in plain English or use `run \"…\"`. You do not have direct tool access in this chat mode."
+    'goals in plain English or use `run "…"`. You do not have direct tool access in this chat mode.'
 )
 
 
@@ -103,7 +104,9 @@ def respond_nl_chat(
     try:
         body, _ = run_shell_chat_turn(messages)
     except Exception as e:
-        print_assistant_block(body=f"(chat unavailable: {e})\n{_canned_greeting_reply()}", use_rich=use_rich)
+        print_assistant_block(
+            body=f"(chat unavailable: {e})\n{_canned_greeting_reply()}", use_rich=use_rich
+        )
         return
     print_assistant_block(body=body, use_rich=use_rich)
 

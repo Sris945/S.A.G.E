@@ -62,7 +62,9 @@ COMMAND_CATALOG: tuple[CommandRow, ...] = (
     CommandRow("setup", "Hardware scan / suggest / apply / pull", "setup scan"),
     CommandRow("config", "models.yaml: show | validate | paths | set …", "config show"),
     CommandRow("bench", "Phase-4 benchmark suite", "bench --out memory/benchmarks/run.json"),
-    CommandRow("rl", "Offline RL: export, train-bc, train-cql, …", "rl export --output datasets/r.jsonl"),
+    CommandRow(
+        "rl", "Offline RL: export, train-bc, train-cql, …", "rl export --output datasets/r.jsonl"
+    ),
     CommandRow("sim", "Oracle tasks + parallel pytest", "sim generate --count 100"),
     CommandRow("cron", "Scheduled jobs", "cron weekly-memory-optimizer"),
     CommandRow("eval", "Trust: golden | e2e | smoke", "eval golden"),
@@ -171,7 +173,7 @@ def print_shell_chat_stub() -> None:
             "[muted]Set[/muted] [accent]SAGE_SHELL_INTENT=off[/accent] [muted]to always use the pipeline for NL.[/muted]\n\n"
             "[muted]• Default NL uses[/muted] [accent]research[/accent] [muted]mode;[/muted] "
             "[accent]SAGE_SHELL_NL_AUTO=1[/accent] [muted]for autonomous runs.\n"
-            "•[/muted] [accent]run \"…\"[/accent] [muted]with[/muted] [accent]--auto[/accent] [muted]or "
+            '•[/muted] [accent]run "…"[/accent] [muted]with[/muted] [accent]--auto[/accent] [muted]or '
             "[accent]--no-clarify[/accent] [muted]for explicit flags.\n"
             "•[/muted] [accent]/commands[/accent] [muted]lists verbs;[/muted] [accent]/[/accent] "
             "[muted]opens the command menu.[/muted]",
@@ -296,7 +298,9 @@ def print_skills_panel(*, show_body: str | None = None) -> None:
                 break
         if match is None:
             c.print(f"  [accent]skill[/accent] [muted]— no match for[/muted] {show_body!r}")
-            c.print("  [muted]Try[/muted] [accent]/skill[/accent] [muted]for the list of ids.[/muted]")
+            c.print(
+                "  [muted]Try[/muted] [accent]/skill[/accent] [muted]for the list of ids.[/muted]"
+            )
             return
         text = match.read_text(encoding="utf-8", errors="replace")
         preview = text[:6000] + ("\n\n… [truncated]" if len(text) > 6000 else "")
@@ -323,7 +327,7 @@ def print_skills_panel(*, show_body: str | None = None) -> None:
     c.print(t)
     c.print(
         "  [muted]Preview:[/muted] [accent]/skill[/accent] [muted]<id-prefix>[/muted]   e.g. "
-        '[accent]/skill[/accent] [muted]workflow/tdd-workflow[/muted]'
+        "[accent]/skill[/accent] [muted]workflow/tdd-workflow[/muted]"
     )
     c.print()
 
@@ -377,7 +381,9 @@ def print_models_panel() -> None:
     c.print(t)
     prof = (os.environ.get("SAGE_MODEL_PROFILE") or "").strip()
     if prof:
-        c.print(f"  [muted]SAGE_MODEL_PROFILE=[/muted][accent]{prof}[/accent] [muted](overrides test routing)[/muted]")
+        c.print(
+            f"  [muted]SAGE_MODEL_PROFILE=[/muted][accent]{prof}[/accent] [muted](overrides test routing)[/muted]"
+        )
     else:
         c.print("  [muted]SAGE_MODEL_PROFILE unset — using models.yaml routing.[/muted]")
     c.print()
@@ -407,7 +413,11 @@ def print_context_panel() -> None:
     c.print()
     c.print("  [accent]Context[/accent] [muted]— local workspace[/muted]")
     c.print(f"  [muted]cwd[/muted] {Path.cwd()}")
-    c.print(f"  [muted]memory/[/muted] ~{sz / 1024:.1f} KiB" if sz else "  [muted]memory/[/muted] (missing or empty)")
+    c.print(
+        f"  [muted]memory/[/muted] ~{sz / 1024:.1f} KiB"
+        if sz
+        else "  [muted]memory/[/muted] (missing or empty)"
+    )
     if last_log:
         c.print(f"  [muted]latest session log[/muted] {last_log}")
     try:

@@ -149,8 +149,7 @@ def _wait_future_with_sage_spinner(
         while not stop.wait(0.11):
             sys.stderr.write(
                 f"\r\x1b[36m[SAGE]\x1b[0m \x1b[2m{label}\x1b[0m "
-                f"\x1b[33m{frames[i % len(frames)]}\x1b[0m loading…"
-                + " " * 4
+                f"\x1b[33m{frames[i % len(frames)]}\x1b[0m loading…" + " " * 4
             )
             sys.stderr.flush()
             i += 1

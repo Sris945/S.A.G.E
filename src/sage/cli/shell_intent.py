@@ -120,10 +120,7 @@ def heuristic_intent(line: str) -> Optional[ShellIntentKind]:
         if phrase in low:
             # "very well" alone is weak; pair with favor / thanks / etc. or short line.
             if phrase == "very well":
-                if any(
-                    x in low
-                    for x in ("favor", "favour", "thanks", "then", "okay", "ok")
-                ):
+                if any(x in low for x in ("favor", "favour", "thanks", "then", "okay", "ok")):
                     return ShellIntentKind.CHAT
                 continue
             return ShellIntentKind.CHAT

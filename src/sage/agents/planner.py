@@ -118,6 +118,7 @@ def _extract_json(text: str) -> dict:
     """Parse planner JSON via shared :func:`parse_json_object`."""
     return parse_json_object(text)
 
+
 def _compute_task_complexity_score(text: str) -> float:
     """
     Deterministic heuristic used for ModelRouter fallback triggers.
@@ -344,7 +345,9 @@ class PlannerAgent:
             ]
 
         # ── Clarification checkpoint (brainstorm_questions) ────────────────────
-        questions = [str(q).strip() for q in (parsed.get("brainstorm_questions") or []) if str(q).strip()]
+        questions = [
+            str(q).strip() for q in (parsed.get("brainstorm_questions") or []) if str(q).strip()
+        ]
         _max_clar_rounds = 2
         if (
             questions

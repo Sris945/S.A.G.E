@@ -40,11 +40,7 @@ def _coder_patch():
     pr = PatchRequest(
         file="hello.py",
         operation="create",
-        patch=(
-            "# line1\n# line2\n# line3\n# line4\n"
-            "def msg():\n"
-            "    return 'hello'\n"
-        ),
+        patch=("# line1\n# line2\n# line3\n# line4\ndef msg():\n    return 'hello'\n"),
         reason="e2e greenfield",
     )
     return {
@@ -64,11 +60,7 @@ def _test_patch():
     pr = PatchRequest(
         file="tests/test_hello.py",
         operation="create",
-        patch=(
-            "def test_msg():\n"
-            "    import hello\n"
-            "    assert hello.msg() == 'hello'\n"
-        ),
+        patch=("def test_msg():\n    import hello\n    assert hello.msg() == 'hello'\n"),
         reason="e2e test file",
     )
     return {
