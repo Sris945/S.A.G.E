@@ -141,7 +141,9 @@ class RagRetriever:
             if QdrantClient is not None and qmodels is not None and self._index:
                 dim = len(self._index[0]["vector"])
                 client = QdrantClient(location=":memory:")
-                client.recreate_collection(
+                if client.collection_exists(collection_name=COLLECTION):
+                    client.delete_collection(collection_name=COLLECTION)
+                client.create_collection(
                     collection_name=COLLECTION,
                     vectors_config=qmodels.VectorParams(
                         size=dim,

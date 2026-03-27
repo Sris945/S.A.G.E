@@ -83,9 +83,11 @@ def _build_index() -> None:
             break
 
     client = QdrantClient(location=":memory:")
-    # Recreate collection each run in this process.
+    # Fresh collection each run in this process (avoid deprecated recreate_collection).
     try:
-        client.recreate_collection(
+        if client.collection_exists(collection_name=_DOCS_COLLECTION):
+            client.delete_collection(collection_name=_DOCS_COLLECTION)
+        client.create_collection(
             collection_name=_DOCS_COLLECTION,
             vectors_config=qmodels.VectorParams(
                 size=_EMBED_DIM,
@@ -93,7 +95,7 @@ def _build_index() -> None:
             ),
         )
     except Exception:
-        # If recreate fails, just proceed; query will fall back in workflow.
+        # If setup fails, just proceed; query will fall back in workflow.
         pass
 
     points = [

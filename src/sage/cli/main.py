@@ -248,7 +248,15 @@ def cmd_doctor(args) -> None:
         print_banner(tagline=False)
 
     checks["python"] = {"ok": sys.version_info >= (3, 10), "detail": sys.version.split()[0]}
-    checks["venv"] = {"ok": Path(".venv").exists(), "detail": str(Path(".venv").resolve())}
+    # `.venv/` at repo root is the local convention; CI uses setup-python's venv (no `.venv` dir).
+    in_any_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+    venv_ok = Path(".venv").exists() or in_any_venv
+    venv_detail = (
+        str(Path(".venv").resolve())
+        if Path(".venv").exists()
+        else (f"active venv: {sys.prefix}" if in_any_venv else "no .venv/ and not in a virtualenv")
+    )
+    checks["venv"] = {"ok": venv_ok, "detail": venv_detail}
     checks["memory_dir_writable"] = {"ok": True, "detail": "memory/"}
     try:
         Path("memory").mkdir(parents=True, exist_ok=True)
