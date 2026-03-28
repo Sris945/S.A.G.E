@@ -31,7 +31,6 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from sage.agents.llm_parse import parse_patch_json
 from sage.cli.branding import print_agent_line
-from sage.debug_mode_log import agent_debug_log
 from sage.orchestrator.model_router import ModelRouter
 from sage.protocol.schemas import PatchRequest
 from sage.protocol.schemas import AgentInsight
@@ -297,14 +296,6 @@ class CoderAgent:
             }
 
         if not str(patch_req.patch or "").strip():
-            # #region agent log
-            agent_debug_log(
-                "coder.py:empty_patch",
-                "coder_model_empty_patch",
-                data={"file": patch_req.file, "operation": patch_req.operation},
-                hypothesis_id="H3",
-            )
-            # #endregion
             err = "model returned empty patch content"
             print_agent_line("Coder", err)
             _emit(

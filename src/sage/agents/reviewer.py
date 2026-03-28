@@ -30,7 +30,6 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from sage.agents.llm_parse import parse_json_object
 from sage.cli.branding import print_agent_line
-from sage.debug_mode_log import agent_debug_log
 from sage.orchestrator.model_router import ModelRouter
 from sage.llm.ollama_safe import chat_with_timeout, OllamaTimeout
 from sage.protocol.schemas import AgentInsight
@@ -231,23 +230,6 @@ class ReviewerAgent:
             )
 
         content = path.read_text()
-        # #region agent log
-        import os
-
-        agent_debug_log(
-            "reviewer.py:post_read",
-            "reviewer_after_read",
-            data={
-                "file": file,
-                "resolved": str(path.resolve()),
-                "cwd": os.getcwd(),
-                "content_len": len(content),
-                "line_count": len(content.splitlines()),
-                "preview": (content[:160].replace("\n", "⏎")),
-            },
-            hypothesis_id="H3_H4_H5",
-        )
-        # #endregion
         issues = _static_checks(file, content)
 
         if issues:
@@ -304,20 +286,6 @@ class ReviewerAgent:
             system = universal_prefix + "\n\n" + system
         print_agent_line("Reviewer", f"Using model: {model}")
         print_agent_line("Reviewer", f"Reviewing: {file}")
-
-        # #region agent log
-        agent_debug_log(
-            "reviewer.py:llm_enter",
-            "reviewer_llm_review_start",
-            data={
-                "file": file,
-                "model": model,
-                "snippet_chars": len(snippet),
-                "system_chars": len(system),
-            },
-            hypothesis_id="H1_H2_H5",
-        )
-        # #endregion
 
         _emit(
             "decision",
@@ -386,22 +354,6 @@ class ReviewerAgent:
             score = 0.7
         issues = _coerce_issues(data.get("issues", []))
         suggestion = str(data.get("suggestion", "") or "")
-
-        # #region agent log
-        agent_debug_log(
-            "reviewer.py:llm_verdict",
-            "reviewer_llm_parsed_verdict",
-            data={
-                "file": file,
-                "verdict": verdict,
-                "score": score,
-                "issues": issues[:5],
-                "raw_response_len": len(raw or ""),
-                "raw_head": (raw[:200].replace("\n", "⏎") if raw else ""),
-            },
-            hypothesis_id="H1_H2",
-        )
-        # #endregion
 
         passed = verdict == "PASS" and score >= 0.5
         if passed:
