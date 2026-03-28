@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sage.cli.log_utils import print_routing_summary_for_session
@@ -82,51 +83,19 @@ def _print_run_header(*, mode: str, prompt: str, clarify: bool = True) -> None:
 
 
 def _print_run_summary(state: dict) -> None:
-    """Structured footer: DAG outcome, errors, handoff hint."""
-    from pathlib import Path
+    """Structured narrative report: goal, plan, files, outcome (see ``SAGE_RUN_OUTPUT``)."""
+    from sage.cli.run_output import build_run_report, print_run_report
 
-    dag = state.get("task_dag") or {}
-    nodes = dag.get("nodes") or []
-    done = sum(1 for n in nodes if isinstance(n, dict) and n.get("status") == "completed")
-    failed = [n for n in nodes if isinstance(n, dict) and n.get("status") == "failed"]
-    blocked = sum(1 for n in nodes if isinstance(n, dict) and n.get("status") == "blocked")
-    err = (state.get("last_error") or "").strip()
-    handoff = Path("memory/handoff.json")
-
-    try:
-        from rich.panel import Panel
-
-        from sage.cli.branding import get_console
-
-        c = get_console()
-        bits = [
-            f"[muted]tasks[/muted] [brand]{done}[/brand] completed",
-            f"[muted]failed[/muted] [accent]{len(failed)}[/accent]",
-            f"[muted]blocked[/muted] {blocked}",
-        ]
-        if state.get("plan_only"):
-            bits.insert(0, "[accent]plan-only[/accent] — no execution")
-        if state.get("dry_run"):
-            bits.append("[accent]dry-run[/accent] — patches not applied")
-        foot = "  ·  ".join(bits)
-        if err:
-            foot += f"\n[accent]last error[/accent] [muted]{err[:560]}{'…' if len(err) > 560 else ''}[/muted]"
-        if handoff.is_file():
-            foot += f"\n[muted]handoff[/muted] {handoff.resolve()} [muted](next run resumes unless --fresh)[/muted]"
-        c.print()
-        c.print(Panel.fit(foot, title="[brand]run summary[/brand]", border_style="#0f766e"))
-        c.print()
-    except Exception:
-        print("\n[SAGE] run summary:")
-        print(f"  completed={done} failed={len(failed)} blocked={blocked}")
-        if err:
-            print(f"  last_error={err[:400]}")
-        if handoff.is_file():
-            print(f"  handoff={handoff}")
+    print_run_report(build_run_report(state if isinstance(state, dict) else {}))
 
 
 def cmd_run(args) -> None:
     from sage.orchestrator import workflow as wf
+    from sage.orchestrator.workflow import (
+        HumanCancelledError,
+        PlanEditRequestedError,
+        PlanRejectedError,
+    )
 
     app = wf.app
     repo_path = args.repo or ""
@@ -157,7 +126,9 @@ def cmd_run(args) -> None:
         "agent_output": {},
         "execution_result": {},
         "debug_attempts": 0,
-        "session_memory": {},
+        "session_memory": {
+            "run_started_at_utc": datetime.now(timezone.utc).isoformat(),
+        },
         "pending_patch_request": {},
         "pending_patch_source": "",
         "pending_fix_pattern_context": {},
@@ -188,7 +159,7 @@ def cmd_run(args) -> None:
     if os.environ.get("SAGE_INSIDE_SHELL"):
         prev_shell_mode = os.environ.get("SAGE_SHELL_MODE")
         os.environ["SAGE_SHELL_MODE"] = "run"
-    last_tick = dict(initial_state)
+    last_tick: dict = dict(initial_state)
     try:
         if wf._HAS_LANGGRAPH:
             for update in app.stream(initial_state, stream_mode="values"):
@@ -201,6 +172,30 @@ def cmd_run(args) -> None:
         if getattr(args, "explain_routing", False):
             print_routing_summary_for_session(new_session_id)
         _print_run_summary(last_tick if isinstance(last_tick, dict) else {})
+    except PlanEditRequestedError as e:
+        try:
+            from sage.cli.branding import get_console
+
+            get_console().print(f"  [muted]{e}[/muted]")
+        except Exception:
+            print(str(e))
+        return
+    except PlanRejectedError as e:
+        try:
+            from sage.cli.branding import get_console
+
+            get_console().print(f"  [accent]{e}[/accent]")
+        except Exception:
+            print(str(e))
+        raise SystemExit(3) from None
+    except HumanCancelledError as e:
+        try:
+            from sage.cli.branding import get_console
+
+            get_console().print(f"  [muted]{e}[/muted]")
+        except Exception:
+            print(str(e))
+        raise SystemExit(3) from None
     except KeyboardInterrupt:
         try:
             from sage.orchestrator.handoff_payload import persist_interrupt_handoff
@@ -220,6 +215,20 @@ def cmd_run(args) -> None:
             return
         raise SystemExit(130) from None
     finally:
+        try:
+            from sage.observability.run_metrics import write_run_metrics_json
+
+            lt = last_tick if isinstance(last_tick, dict) else {}
+            p = write_run_metrics_json(lt, base_dir=Path.cwd())
+            if p and (os.environ.get("SAGE_RUN_OUTPUT") or "").strip().lower() == "debug":
+                try:
+                    from sage.cli.branding import get_console
+
+                    get_console().print(f"  [muted]metrics[/muted] {p.resolve()}")
+                except Exception:
+                    print(f"[SAGE] metrics written: {p}")
+        except Exception:
+            pass
         if prev_session_id is None:
             os.environ.pop("SAGE_SESSION_ID", None)
         else:

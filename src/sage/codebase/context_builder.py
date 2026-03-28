@@ -14,6 +14,7 @@ from sage.codebase.scanner import scan_repo
 from sage.codebase.semantic_reader import build_semantic_map
 from sage.codebase.state_assessor import assess_state
 from sage.codebase.conventions import detect_conventions
+from sage.codebase.code_index import ensure_index_for_brief
 
 
 def build_codebase_brief(repo_path: str) -> dict[str, Any]:
@@ -78,6 +79,9 @@ def build_codebase_brief(repo_path: str) -> dict[str, Any]:
     (cache_dir / "open_threads.md").write_text(
         "## Open Threads\n\n" + "\n".join(f"- {t}" for t in open_threads[:50])
     )
+
+    # Vector index + retrieval (spec §3 Stage 2).
+    brief = ensure_index_for_brief(str(repo), brief)
 
     # Return the brief for prompt injection.
     return brief

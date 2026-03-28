@@ -26,7 +26,12 @@ class OrchestratorIntelligenceFeed:
     insights: list[AgentInsight] = field(default_factory=list)
     interventions: list[dict] = field(default_factory=list)
     _unclear_escalated_task_ids: set[str] = field(default_factory=set, repr=False)
+    _risk_by_task: dict[str, float] = field(default_factory=dict, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, init=False)
+
+    SEVERITY_WEIGHT: dict[str, float] = field(
+        default_factory=lambda: {"low": 0.12, "medium": 0.35, "high": 0.65}
+    )
 
     def _unclear_signal_count(self, task_id: str) -> int:
         n = 0
@@ -41,7 +46,9 @@ class OrchestratorIntelligenceFeed:
                 n += 1
         return n
 
-    def _emit_intervention_event(self, insight: AgentInsight, *, cause: str) -> None:
+    def _emit_intervention_event(
+        self, insight: AgentInsight, *, cause: str, action_taken: str = "emit_event"
+    ) -> None:
         try:
             from sage.orchestrator.workflow import EVENT_BUS
             from sage.protocol.schemas import Event
@@ -52,6 +59,7 @@ class OrchestratorIntelligenceFeed:
                     task_id=insight.task_id,
                     payload={
                         "cause": cause,
+                        "action_taken": action_taken,
                         "agent": insight.agent,
                         "severity": insight.severity,
                         "requires_orchestrator_action": insight.requires_orchestrator_action,
@@ -72,6 +80,16 @@ class OrchestratorIntelligenceFeed:
 
             self.insights.append(insight)
 
+            # Composite risk (0–1) for model pre-emption / routing.
+            tid_r = str(insight.task_id or "")
+            if tid_r:
+                sev = (insight.severity or "low").lower()
+                w = float(self.SEVERITY_WEIGHT.get(sev, 0.15))
+                if bool(insight.requires_orchestrator_action):
+                    w = min(1.0, w + 0.15)
+                prev = float(self._risk_by_task.get(tid_r, 0.0))
+                self._risk_by_task[tid_r] = min(1.0, prev + w * 0.25)
+
             # Spec §11: escalate after repeated UNCLEAR / uncertainty on the same task.
             tid = str(insight.task_id or "")
             if tid and self._unclear_signal_count(tid) >= self.uncertainty_count:
@@ -91,7 +109,9 @@ class OrchestratorIntelligenceFeed:
                             "requires_orchestrator_action": True,
                         }
                     )
-                    self._emit_intervention_event(insight, cause="unclear_threshold")
+                    self._emit_intervention_event(
+                        insight, cause="unclear_threshold", action_taken="escalate_human_checkpoint"
+                    )
 
             # Phase 3 contract: emit a log entry for every ingested packet.
             # Observability must be best-effort and never break orchestration.
@@ -129,7 +149,9 @@ class OrchestratorIntelligenceFeed:
                     }
                 )
                 if insight.severity == "high" or insight.requires_orchestrator_action:
-                    self._emit_intervention_event(insight, cause="agent_insight")
+                    self._emit_intervention_event(
+                        insight, cause="agent_insight", action_taken="log_and_event_bus"
+                    )
 
     def get_injected_context(self, task_id: str, *, next_agent: str | None = None) -> str:
         """
@@ -210,3 +232,28 @@ class OrchestratorIntelligenceFeed:
                     rank = 1
                 best = max(best, rank)
             return best
+
+    def risk_score(self, task_id: str) -> float:
+        """Composite risk in [0, 1] for the task."""
+        with self._lock:
+            return float(self._risk_by_task.get(task_id, 0.0))
+
+    def should_preempt(self, task_id: str, *, threshold: float = 0.85) -> bool:
+        """If True, downstream should prefer larger fallback models for this task."""
+        return self.risk_score(task_id) >= threshold
+
+    def get_reviewer_coder_high_notes(self, task_id: str) -> str:
+        """Merge high-severity coder insights for reviewer prefix (spec §11)."""
+        with self._lock:
+            lines: list[str] = []
+            for ins in self.insights:
+                if getattr(ins, "task_id", "") != task_id:
+                    continue
+                if (ins.agent or "") != "coder":
+                    continue
+                if (ins.severity or "") != "high":
+                    continue
+                c = (ins.content or "").strip()
+                if c:
+                    lines.append(f"[CODER_HIGH_RISK]: {c[:1200]}")
+            return "\n".join(lines[:8])

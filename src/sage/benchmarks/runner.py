@@ -254,6 +254,19 @@ def _execute_benchmark_loop(
 
         local_vs_cloud_ratio = 0.0 if ollama_timeout_events else 1.0
 
+        try:
+            from sage.observability.run_metrics import build_run_metrics
+
+            rm = build_run_metrics(final_state if isinstance(final_state, dict) else {})
+            lcr = rm.get("local_vs_cloud_ratio")
+            if lcr is not None:
+                local_vs_cloud_ratio = float(lcr)
+            pqd = rm.get("prompt_quality_delta")
+            if pqd is not None:
+                prompt_quality_delta = float(pqd)
+        except Exception:
+            pass
+
         metrics = {
             "build_success_rate": build_success_rate,
             "test_pass_rate": test_pass_rate,
@@ -264,6 +277,13 @@ def _execute_benchmark_loop(
             "codebase_understanding_accuracy": codebase_understanding_accuracy,
             "local_vs_cloud_ratio": local_vs_cloud_ratio,
         }
+        metrics_notes: dict[str, str] = {
+            "codebase_understanding_accuracy": (
+                "Lightweight bench: no labeled retrieval judge; using neutral 1.0 placeholder."
+            ),
+        }
+        if total_tasks == 0:
+            metrics_notes["build_success_rate"] = "No tasks in DAG — metric not meaningful."
 
         benchmarks.append(
             {
@@ -271,6 +291,7 @@ def _execute_benchmark_loop(
                 "status": status,
                 "error": err,
                 "metrics": metrics,
+                "metrics_notes": metrics_notes,
                 "started_at": case_started.isoformat(),
                 "completed_at": case_ended.isoformat(),
             }

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap SAGE: venv + editable install (Linux / macOS).
+# Installs runtime + dev tools + optional Textual TUI (`sage tui`).
 # Usage: ./startup.sh   OR   bash startup.sh
 set -euo pipefail
 
@@ -21,13 +22,15 @@ fi
 source .venv/bin/activate
 
 python -m pip install -U pip wheel setuptools
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,tui]"
 
 echo ""
 echo "[SAGE] OK — virtualenv ready at $ROOT/.venv"
 echo "    source .venv/bin/activate"
 echo "    sage doctor"
-echo "    sage                    # interactive shell"
+echo "    sage                    # interactive shell (prompt_toolkit)"
+echo "    sage tui                # full-screen UI (Textual)"
 echo ""
 echo "Optional: export SAGE_REPO_URL=https://github.com/your-org/your-fork"
 echo "          (so /help and /commands show correct doc links)."
+echo "Textual-only install: pip install -e \".[tui]\"  (if you skipped dev extras)"

@@ -4,7 +4,11 @@ import sys
 
 import pytest
 
-from sage.execution.verifier import VerificationEngine, VerificationError
+from sage.execution.verifier import (
+    VerificationEngine,
+    VerificationError,
+    normalize_verification_command_line,
+)
 
 
 def test_verifier_blocks_denied_substring():
@@ -26,6 +30,29 @@ def test_verifier_chained_commands(tmp_path):
         "\"import sys; sys.path.insert(0, 'src'); import app; assert app.x == 42\""
     )
     r = VerificationEngine().run(cmd, cwd=str(tmp_path))
+    assert r["passed"] is True
+
+
+def test_verifier_normalizes_bare_py_compile(tmp_path):
+    """LLMs sometimes emit ``py_compile`` as argv0; we map to ``python -m py_compile``."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    r = VerificationEngine().run("py_compile src/app.py", cwd=str(tmp_path))
+    assert r["passed"] is True
+
+
+def test_normalize_rewrites_py_compile_on_requirements_txt():
+    """py_compile on requirements.txt parses pins as Python source; rewrite to pathlib check."""
+    bad = "python -m py_compile src/requirements.txt"
+    fixed = normalize_verification_command_line(bad)
+    assert "py_compile" not in fixed
+    assert "requirements.txt" in fixed
+    assert "pathlib" in fixed
+
+
+def test_verifier_requirements_txt_rewrite_passes(tmp_path):
+    (tmp_path / "requirements.txt").write_text("pytest>=7\n", encoding="utf-8")
+    r = VerificationEngine().run("python -m py_compile requirements.txt", cwd=str(tmp_path))
     assert r["passed"] is True
 
 

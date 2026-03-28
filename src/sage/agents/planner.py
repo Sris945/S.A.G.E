@@ -15,6 +15,8 @@ Pipeline:
 
 import json
 import os
+import re
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -23,7 +25,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     ollama = None
 
-from sage.agents.llm_parse import parse_json_object
+from sage.agents.llm_parse import parse_json_value
 from sage.cli.branding import print_agent_line
 from sage.orchestrator.model_router import ModelRouter
 from sage.protocol.schemas import TaskNode
@@ -80,6 +82,14 @@ _REQ_FASTAPI_SNIPPET = (
     "assert 'fastapi' in t and 'uvicorn' in t, 'need fastapi and uvicorn in requirements'\""
 )
 
+# Non-web greenfield: manifest must exist and be non-empty — never py_compile on .txt.
+_REQ_GENERIC_SNIPPET = (
+    "python -c \"from pathlib import Path; "
+    "c=[Path('requirements.txt'),Path('src/requirements.txt')]; "
+    "ok=next((p for p in c if p.is_file() and p.read_text(errors='ignore').strip()), None); "
+    "assert ok is not None, 'missing or empty requirements.txt'\""
+)
+
 
 def _default_doc_verification(description: str) -> str:
     """Portable check that a primary doc file exists and is non-trivial."""
@@ -102,7 +112,203 @@ def _fallback_verification_for_goal(goal: str) -> str:
     g = (goal or "").lower()
     if "fastapi" in g or "/health" in g or " health" in g:
         return _FASTAPI_APP_VERIFY
+    m = re.search(r"\bsrc/[\w./]+\.py\b", goal or "", flags=re.I)
+    if m:
+        return f"python -m py_compile {m.group(0)}"
     return "python -m py_compile src/app.py"
+
+
+def _heuristic_library_plus_test_tasks(prompt: str) -> list[TaskNode] | None:
+    """
+    When JSON parsing fails, split obvious ``src/*.py`` + ``tests/test_*.py`` goals into
+    two tasks so the coder is not asked to emit two files in one patch (small models fail).
+    """
+    pl = (prompt or "").replace("\n", " ")
+    srcs = re.findall(r"\bsrc/[\w./]+\.py\b", pl, flags=re.I)
+    tests = re.findall(r"\btests/test_[\w]+\.py\b", pl, flags=re.I)
+    if len(srcs) != 1 or len(tests) != 1:
+        return None
+    src_f = srcs[0].replace("\\", "/")
+    test_f = tests[0].replace("\\", "/")
+    v_impl = f"python -m py_compile {src_f}"
+    v_test = f"{sys.executable} -m pytest {test_f} -q"
+    return [
+        TaskNode(
+            id="task_001",
+            description=(
+                f"Implement {src_f}: functions/classes required by the goal "
+                f"(e.g. greet()) so imports and behavior match the prompt."
+            ),
+            dependencies=[],
+            assigned_agent="coder",
+            verification=v_impl,
+            task_complexity_score=_compute_task_complexity_score(prompt),
+            epistemic_flags=[],
+            status="pending",
+        ),
+        TaskNode(
+            id="task_002",
+            description=(
+                f"Add {test_f} with pytest tests that exercise the implementation "
+                f"from {src_f} per the goal."
+            ),
+            dependencies=["task_001"],
+            assigned_agent="test_engineer",
+            verification=v_test,
+            task_complexity_score=_compute_task_complexity_score(prompt),
+            epistemic_flags=[],
+            status="pending",
+        ),
+    ]
+
+
+def _repair_dag_if_goal_mismatch(prompt: str, nodes: list[TaskNode]) -> list[TaskNode]:
+    """
+    Small models often emit a canned FastAPI 4-task DAG. When the user goal explicitly
+    names ``src/foo.py`` and ``tests/test_*.py`` and does not ask for HTTP/FastAPI, replace
+    the DAG with the 2-task library + pytest heuristic.
+    """
+    alt = _heuristic_library_plus_test_tasks(prompt)
+    if not alt:
+        return nodes
+    g = _goal_for_stack_detection(prompt)
+    if any(x in g for x in ("fastapi", "/health", "uvicorn")):
+        return nodes
+    blog = " ".join((n.description or "").lower() for n in nodes).replace("\\", "/")
+    srcs = re.findall(r"\bsrc/[\w./]+\.py\b", prompt, flags=re.I)
+    tests = re.findall(r"\btests/test_[\w]+\.py\b", prompt, flags=re.I)
+    if len(srcs) == 1 and len(tests) == 1:
+        ws = srcs[0].lower().replace("\\", "/")
+        wt = tests[0].lower().replace("\\", "/")
+        if ws in blog and wt in blog:
+            return nodes
+    if (
+        "fastapi" in blog
+        or "src/app.py" in blog
+        or "testclient" in blog
+        or "test_app.py" in blog
+    ):
+        print_agent_line(
+            "Planner",
+            "Replacing generic web-app DAG with implement + test tasks matching your goal.",
+        )
+        return alt
+    return nodes
+
+
+def _fallback_dag_nodes(prompt: str, *, log_line: str) -> list[TaskNode]:
+    """One coder task, or implement + test split when ``src/*.py`` + ``tests/test_*.py`` match."""
+    h = _heuristic_library_plus_test_tasks(prompt)
+    if h:
+        print_agent_line("Planner", log_line)
+        return h
+    return [
+        TaskNode(
+            id="task_001",
+            description=prompt,
+            dependencies=[],
+            assigned_agent="coder",
+            verification=_fallback_verification_for_goal(prompt),
+            task_complexity_score=_compute_task_complexity_score(prompt),
+            epistemic_flags=[],
+            status="pending",
+        )
+    ]
+
+
+def _warn_goal_mismatch_health_stub(goal: str, nodes: list[TaskNode]) -> None:
+    """
+    If the user asked for a rich web app but every task looks like a /health template,
+    emit a visible warning (planner template should prevent this; models still slip).
+    """
+    g = (goal or "").lower()
+    rich_goal = any(
+        k in g
+        for k in (
+            "calculator",
+            "html",
+            "single page",
+            "single-page",
+            "evaluate",
+            "/api",
+            "dashboard",
+            "form",
+            "post endpoint",
+            "post /",
+        )
+    )
+    if not rich_goal:
+        return
+    blob = " ".join((n.description or "") for n in nodes).lower()
+    if "/health" not in blob:
+        return
+    if any(x in blob for x in ("calculator", "html", "eval", "/api", "index.html", "post")):
+        return
+    print_agent_line(
+        "Planner",
+        "WARNING: DAG mentions /health but not the GOAL’s UI/API features — "
+        "model may have ignored the prompt; re-run or use a larger planner model.",
+    )
+
+
+def _dedupe_task_nodes(nodes: list[TaskNode]) -> list[TaskNode]:
+    """
+    Drop duplicate tasks that share the same description, dependencies, and agent.
+
+    Planners sometimes emit parallel clones (e.g. three identical “Implement src/app.py…”).
+    Dependencies are rewritten so references to removed ids point to the kept id.
+    """
+    key_to_kept_id: dict[tuple, str] = {}
+    removed_to_kept: dict[str, str] = {}
+    for n in nodes:
+        key = (
+            (n.description or "").strip().lower(),
+            tuple(n.dependencies or []),
+            n.assigned_agent,
+        )
+        if key in key_to_kept_id:
+            removed_to_kept[n.id] = key_to_kept_id[key]
+        else:
+            key_to_kept_id[key] = n.id
+
+    if not removed_to_kept:
+        return nodes
+
+    def resolve_dep(did: str) -> str:
+        while did in removed_to_kept:
+            did = removed_to_kept[did]
+        return did
+
+    out: list[TaskNode] = []
+    for n in nodes:
+        if n.id in removed_to_kept:
+            continue
+        new_deps: list[str] = []
+        for d in n.dependencies or []:
+            rd = resolve_dep(d)
+            if rd not in new_deps:
+                new_deps.append(rd)
+        out.append(replace(n, dependencies=new_deps))
+    print_agent_line(
+        "Planner",
+        f"Merged {len(removed_to_kept)} duplicate DAG node(s) (same description+deps+agent).",
+    )
+    return out
+
+
+def _goal_for_stack_detection(user_goal: str) -> str:
+    """
+    Use only the user-visible goal for FastAPI/requirements heuristics.
+
+    ``prompt_middleware`` may append ``CODEBASE CONVENTIONS`` blocks; those can mention
+    frameworks and falsely trigger FastAPI-specific verification.
+    """
+    g = user_goal or ""
+    for sep in ("\nCODEBASE CONVENTIONS", "\n## CODEBASE CONVENTIONS", "\n---\n"):
+        if sep in g:
+            g = g.split(sep, 1)[0]
+            break
+    return g.lower()
 
 
 def _postprocess_task_nodes(nodes: list[TaskNode], user_goal: str) -> list[TaskNode]:
@@ -110,7 +316,7 @@ def _postprocess_task_nodes(nodes: list[TaskNode], user_goal: str) -> list[TaskN
     Patch weak model output: py_compile-only implementation tasks for FastAPI goals,
     and empty/weak requirements checks.
     """
-    g = (user_goal or "").lower()
+    g = _goal_for_stack_detection(user_goal)
     out: list[TaskNode] = []
     for n in nodes:
         nn = n
@@ -119,11 +325,21 @@ def _postprocess_task_nodes(nodes: list[TaskNode], user_goal: str) -> list[TaskN
         v = (nn.verification or "").strip()
 
         if nn.assigned_agent == "coder":
-            if "requirements" in desc_l and "fastapi" in merged:
-                if not v or ("assert" not in v and "fastapi" not in v.lower()):
-                    nn = replace(nn, verification=_REQ_FASTAPI_SNIPPET)
-                    v = nn.verification
-            if "fastapi" in merged and v and "py_compile" in v and "import app" not in v:
+            # Dependency manifest: only use FastAPI-specific checks when the *user goal* asks for
+            # a web stack — not when the planner hallucinated "FastAPI" into a task description.
+            want_fastapi_stack = "fastapi" in g or "/health" in g or " uvicorn" in g
+            if "requirements" in desc_l:
+                if want_fastapi_stack:
+                    if not v or ("assert" not in v and "fastapi" not in v.lower()):
+                        nn = replace(nn, verification=_REQ_FASTAPI_SNIPPET)
+                        v = nn.verification
+                else:
+                    if (not v) or "py_compile" in v or (
+                        v and "fastapi" in v.lower() and not want_fastapi_stack
+                    ):
+                        nn = replace(nn, verification=_REQ_GENERIC_SNIPPET)
+                        v = nn.verification
+            if want_fastapi_stack and "fastapi" in merged and v and "py_compile" in v and "import app" not in v:
                 if "src/app.py" in v or "src/app.py" in desc_l:
                     if "&&" not in v:
                         nn = replace(nn, verification=_FASTAPI_APP_VERIFY)
@@ -230,8 +446,16 @@ def _maybe_upgrade_to_test_engineer(description: str, agent: str) -> str:
 
 
 def _extract_json(text: str) -> dict:
-    """Parse planner JSON via shared :func:`parse_json_object`."""
-    return parse_json_object(text)
+    """
+    Parse planner JSON. Models sometimes emit a **raw array** of task nodes instead of
+    ``{\"nodes\": [...]}`` — accept both.
+    """
+    val = parse_json_value(text)
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, list):
+        return {"dag": val}
+    raise ValueError(f"Planner JSON must be object or array, got {type(val).__name__}")
 
 
 def _compute_task_complexity_score(text: str) -> float:
@@ -383,18 +607,9 @@ class PlannerAgent:
                 content="ollama module not available; planner used fallback single-task DAG.",
                 requires_orchestrator_action=True,
             )
-            return [
-                TaskNode(
-                    id="task_001",
-                    description=prompt,
-                    dependencies=[],
-                    assigned_agent="coder",
-                    verification=_fallback_verification_for_goal(prompt),
-                    task_complexity_score=_compute_task_complexity_score(prompt),
-                    epistemic_flags=[],
-                    status="pending",
-                )
-            ]
+            return _fallback_dag_nodes(
+                prompt, log_line="Ollama unavailable — using fallback DAG (heuristic split if applicable)."
+            )
 
         try:
             response = chat_with_timeout(
@@ -424,18 +639,9 @@ class PlannerAgent:
                 content=f"planner model call failed/timeout: {str(e)[:1200]}",
                 requires_orchestrator_action=True,
             )
-            return [
-                TaskNode(
-                    id="task_001",
-                    description=prompt,
-                    dependencies=[],
-                    assigned_agent="coder",
-                    verification=_fallback_verification_for_goal(prompt),
-                    task_complexity_score=_compute_task_complexity_score(prompt),
-                    epistemic_flags=[],
-                    status="pending",
-                )
-            ]
+            return _fallback_dag_nodes(
+                prompt, log_line="Planner call failed — fallback DAG (heuristic split if applicable)."
+            )
 
         raw = response["message"]["content"]
 
@@ -452,16 +658,10 @@ class PlannerAgent:
                 content=f"planner output parse failed: {str(e)[:1200]}",
                 requires_orchestrator_action=True,
             )
-            return [
-                TaskNode(
-                    id="task_001",
-                    description=prompt,
-                    dependencies=[],
-                    assigned_agent="coder",
-                    verification=_fallback_verification_for_goal(prompt),
-                    task_complexity_score=_compute_task_complexity_score(prompt),
-                )
-            ]
+            return _fallback_dag_nodes(
+                prompt,
+                log_line="JSON parse failed — fallback DAG (heuristic split if applicable).",
+            )
 
         # ── Clarification checkpoint (brainstorm_questions) ────────────────────
         questions = [
@@ -517,16 +717,9 @@ class PlannerAgent:
                 content=f"planner DAG validation failed: {str(e)[:1200]}",
                 requires_orchestrator_action=True,
             )
-            return [
-                TaskNode(
-                    id="task_001",
-                    description=prompt,
-                    dependencies=[],
-                    assigned_agent="coder",
-                    verification=_fallback_verification_for_goal(prompt),
-                    task_complexity_score=_compute_task_complexity_score(prompt),
-                )
-            ]
+            return _fallback_dag_nodes(
+                prompt, log_line="DAG validation failed — fallback DAG (heuristic split if applicable)."
+            )
 
         if not nodes:
             print_agent_line("Planner", "WARNING: Empty DAG returned. Single-task fallback.")
@@ -536,18 +729,15 @@ class PlannerAgent:
                 content="planner returned empty DAG; using single-task fallback.",
                 requires_orchestrator_action=True,
             )
-            return [
-                TaskNode(
-                    id="task_001",
-                    description=prompt,
-                    dependencies=[],
-                    assigned_agent="coder",
-                    verification=_fallback_verification_for_goal(prompt),
-                    task_complexity_score=_compute_task_complexity_score(prompt),
-                )
-            ]
+            return _fallback_dag_nodes(
+                prompt, log_line="Empty planner DAG — fallback (heuristic split if applicable)."
+            )
+
+        nodes = _repair_dag_if_goal_mismatch(prompt, nodes)
 
         nodes = _postprocess_task_nodes(nodes, prompt)
+        nodes = _dedupe_task_nodes(nodes)
+        _warn_goal_mismatch_health_stub(prompt, nodes)
 
         print_agent_line("Planner", f"DAG ready — {len(nodes)} task(s):")
         for n in nodes:

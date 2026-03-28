@@ -5,7 +5,7 @@
 Run unit tests (default for every PR):
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"          # matches CI; add `tui` if you use `sage tui` locally
 pytest tests/ -q
 ```
 

@@ -32,6 +32,15 @@ def build_prefix_for_agent(state: SAGEState, *, agent_role: str, task_id: str | 
     orch_notes = ""
     if insight_feed is not None and hasattr(insight_feed, "get_injected_context"):
         orch_notes = insight_feed.get_injected_context(task_id or "", next_agent=agent_role)
+    if (
+        (agent_role or "").lower() == "reviewer"
+        and insight_feed is not None
+        and hasattr(insight_feed, "get_reviewer_coder_high_notes")
+        and task_id
+    ):
+        extra = insight_feed.get_reviewer_coder_high_notes(task_id)
+        if extra.strip():
+            orch_notes = (orch_notes + "\n\n" + extra).strip() if orch_notes else extra
 
     allowed_tools = allowed_tools_for_role(agent_role)
 

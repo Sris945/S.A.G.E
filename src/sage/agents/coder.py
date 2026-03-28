@@ -206,6 +206,13 @@ class CoderAgent:
             # Spec-aligned: restrict exploration to fallback strategies.
             candidate_keys = ["coder:fallback:conservative", "coder:fallback:standard"]
 
+        # Orchestrator intelligence feed: high composite risk → prefer fallback models.
+        if bool(memory.get("intel_force_fallback")):
+            candidate_keys = [k for k in candidate_keys if "fallback" in k] or [
+                "coder:fallback:standard",
+                "coder:fallback:conservative",
+            ]
+
         strategy_key = bandit.select(strategy_keys=candidate_keys)
         chosen = strategies[strategy_key]
         model = chosen["model"]

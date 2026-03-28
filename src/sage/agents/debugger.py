@@ -52,8 +52,20 @@ def _load_template() -> str:
 
 
 def _normalise_data(raw_data) -> dict:
+    """
+    ``parse_patch_json`` may return a dict (PatchRequest) or a list (JSON Patch ops
+    or occasionally a list of candidate objects). Never pass a bare list to
+    ``_to_patch_request`` — that caused AttributeError in the wild.
+    """
+    if isinstance(raw_data, dict):
+        return raw_data
     if isinstance(raw_data, list):
+        if len(raw_data) == 0:
+            raise ValueError("Debugger model returned empty JSON array [] (no patch).")
+        # RFC-6902 JSON Patch: [{"op":"add","path":"...","value":"..."}, ...]
         for op in raw_data:
+            if not isinstance(op, dict):
+                continue
             if op.get("op") in ("add", "replace"):
                 return {
                     "file": op.get("path", "output.py").lstrip("/"),
@@ -63,7 +75,17 @@ def _normalise_data(raw_data) -> dict:
                     "suspected_cause": "unknown",
                     "epistemic_flags": [],
                 }
-    return raw_data
+        # Some models emit [ { "file": "...", "patch": "...", ... } ]
+        for item in raw_data:
+            if isinstance(item, dict) and (
+                "file" in item or "patch" in item or "operation" in item
+            ):
+                return item
+        raise ValueError(
+            "Debugger JSON was a list that could not be mapped to a PatchRequest "
+            f"(len={len(raw_data)})."
+        )
+    raise ValueError(f"Debugger JSON must be an object or array, got {type(raw_data).__name__}")
 
 
 def _to_patch_request(data: dict) -> PatchRequest:
@@ -282,7 +304,7 @@ class DebuggerAgent:
             raw_data = parse_patch_json(raw)
             data = _normalise_data(raw_data)
             patch_req = _to_patch_request(data)
-        except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
+        except (ValueError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
             print_agent_line("Debugger", f"Parse failed: {e}")
             _emit(
                 "risk",

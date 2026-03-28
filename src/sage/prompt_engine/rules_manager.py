@@ -83,6 +83,68 @@ def validate_rule_layers(layers: list[RulesLayer]) -> list[str]:
     ):
         warnings.append("Possible contradiction between mandatory testing and 'never write tests'.")
 
+    # Pairwise layer scan: imperative vs prohibition on overlapping content words.
+    must_never_pat = re.compile(r"\b(must|always|required to)\b.{0,120}", re.I)
+    never_pat = re.compile(r"\b(never|do not|don't)\b.{0,120}", re.I)
+    stop = {
+        "must",
+        "always",
+        "never",
+        "not",
+        "do",
+        "to",
+        "the",
+        "a",
+        "an",
+        "use",
+        "call",
+        "write",
+    }
+    pair_seen: set[tuple[int, int, str]] = set()
+    for i, la in enumerate(layers):
+        for j, lb in enumerate(layers):
+            if j <= i:
+                continue
+            for a in la.text.splitlines()[:48]:
+                for b in lb.text.splitlines()[:48]:
+                    am = must_never_pat.search(a)
+                    bn = never_pat.search(b)
+                    if am and bn:
+                        ta = re.sub(r"\W+", " ", am.group(0).lower())
+                        tb = re.sub(r"\W+", " ", bn.group(0).lower())
+                        toks = set(ta.split()) & set(tb.split()) - stop
+                        if len(toks) >= 2:
+                            key = tuple(sorted(toks))[:5]
+                            sig = (i, j, str(key))
+                            if sig not in pair_seen:
+                                pair_seen.add(sig)
+                                warnings.append(
+                                    f"Possible contradiction between layers ({la.label} vs {lb.label}): "
+                                    f"must/always vs never on overlapping terms {key}."
+                                )
+                    an = never_pat.search(a)
+                    bm = must_never_pat.search(b)
+                    if an and bm:
+                        ta = re.sub(r"\W+", " ", an.group(0).lower())
+                        tb = re.sub(r"\W+", " ", bm.group(0).lower())
+                        toks = set(ta.split()) & set(tb.split()) - stop
+                        if len(toks) >= 2:
+                            key = tuple(sorted(toks))[:5]
+                            sig = (i, j, str(key))
+                            if sig not in pair_seen:
+                                pair_seen.add(sig)
+                                warnings.append(
+                                    f"Possible contradiction between layers ({la.label} vs {lb.label}): "
+                                    f"never vs must/always on overlapping terms {key}."
+                                )
+
+    never_kw = set(re.findall(r"never\s+(?:use|call|import)\s+([a-z0-9_./-]+)", combined_lower))
+    must_kw = set(
+        re.findall(r"(?:must|always|required to)\s+(?:use|call|import)\s+([a-z0-9_./-]+)", combined_lower)
+    )
+    for w in sorted(never_kw & must_kw):
+        warnings.append(f"Possible contradiction: both 'never {w}' and 'must/always {w}' appear.")
+
     if "eval(" in combined_lower or re.search(r"\beval\s*\(", combined_lower):
         warnings.append("Rule mentions eval(...) — risky in agent-executed environments.")
 

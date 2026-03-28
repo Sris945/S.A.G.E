@@ -376,6 +376,14 @@ class HumanCancelledError(RuntimeError):
     """Raised when the user cancels a human-in-the-loop checkpoint."""
 
 
+class PlanRejectedError(HumanCancelledError):
+    """User rejected the plan at checkpoint 2."""
+
+
+class PlanEditRequestedError(HumanCancelledError):
+    """User chose to edit the plan offline (``.sage/last_plan.json``) and resume."""
+
+
 def safe_human_confirm(prompt_text: str, *, default_yes: bool = True) -> bool:
     """
     Human confirm helper that is safe in non-interactive environments.
@@ -406,6 +414,58 @@ def safe_human_confirm(prompt_text: str, *, default_yes: bool = True) -> bool:
     if ans in ("n", "no"):
         return False
     return default_yes
+
+
+def _safe_plan_checkpoint_choice() -> str:
+    """
+    Research-mode post-plan checkpoint: approve, reject, or edit offline.
+
+    Non-TTY / non-interactive: approve (``a``) without prompting.
+    """
+    import os
+    import sys
+
+    if (os.environ.get("SAGE_NON_INTERACTIVE") or "").strip().lower() in ("1", "true", "yes"):
+        return "a"
+    try:
+        is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    except Exception:
+        is_tty = False
+    if not is_tty:
+        return "a"
+    prompt = (
+        "[SAGE] Plan checkpoint — type [a]pprove, [r]eject, or [e]dit "
+        "(yes/no/edit work too). `sage run --resume` is for later, not this line: "
+    )
+    try:
+        raw = input(prompt).strip().lower()
+    except EOFError:
+        return "a"
+    if "sage run" in raw or (raw.startswith("resume") and len(raw) > 4):
+        try:
+            from sage.cli.branding import get_console
+
+            get_console().print(
+                "  [muted]Answer a / r / e here first. Use[/muted] [accent]sage run --resume[/accent] "
+                "[muted]from the shell after this run ends.[/muted]"
+            )
+        except Exception:
+            print("[SAGE] Type a, r, or e (not the resume command).")
+        try:
+            raw = input(prompt).strip().lower()
+        except EOFError:
+            return "a"
+    if not raw:
+        return "a"
+    if raw in ("r", "reject", "no", "n", "abort", "cancel", "stop"):
+        return "r"
+    if raw in ("e", "edit", "manual", "m"):
+        return "e"
+    if raw in ("a", "approve", "y", "yes", "ok", "continue", "go", "run"):
+        return "a"
+    if raw.startswith("app"):
+        return "a"
+    return "a"
 
 
 def human_checkpoint_1_post_scan(state: SAGEState) -> SAGEState:
@@ -456,6 +516,18 @@ def human_checkpoint(state: SAGEState) -> SAGEState:
         checkpoint_type = 5
     elif any_failed:
         checkpoint_type = 3
+
+    # User-visible escalation banner (type 5) before the generic checkpoint table.
+    if orch_escalation and state.get("mode") == "research":
+        try:
+            from sage.cli.branding import get_console
+
+            get_console().print(
+                "\n  [bold #f59e0b]Insight escalation[/bold #f59e0b] "
+                "[muted]— intel feed requires human review before execution.[/muted]\n"
+            )
+        except Exception:
+            print("\n[SAGE] Insight escalation — review checkpoint before continuing.\n")
 
     # Phase 3/4 observability: confirm checkpoint routing in logs.
     try:
@@ -524,7 +596,25 @@ def human_checkpoint(state: SAGEState) -> SAGEState:
                     padding=(0, 1),
                 )
             )
+            choice = _safe_plan_checkpoint_choice()
+            if choice == "r":
+                raise PlanRejectedError("Plan rejected at human checkpoint (post-plan).")
+            if choice == "e":
+                try:
+                    base = Path(state.get("repo_path") or ".")
+                    plan_hint = base / ".sage" / "last_plan.json"
+                    c.print(
+                        f"[muted]Edit {plan_hint.resolve()} then run[/muted] "
+                        f"[accent]sage run --resume[/accent] [muted]from this repo.[/muted]"
+                    )
+                except Exception:
+                    pass
+                raise PlanEditRequestedError(
+                    "Plan edit requested — update `.sage/last_plan.json` and `sage run --resume`."
+                )
             Prompt.ask("Press Enter to continue", default="", show_default=False)
+        except (PlanRejectedError, PlanEditRequestedError):
+            raise
         except Exception:
             print(f"\n[SAGE] HUMAN CHECKPOINT {checkpoint_type} — review required")
             if state.get("task_dag", {}).get("nodes"):
@@ -544,6 +634,14 @@ def human_checkpoint(state: SAGEState) -> SAGEState:
                 print(f"[SAGE] Plan snapshot written: {plan_path}")
             except Exception:
                 pass
+            ch = _safe_plan_checkpoint_choice()
+            if ch == "r":
+                raise PlanRejectedError("Plan rejected at human checkpoint (post-plan).")
+            if ch == "e":
+                print(
+                    "[SAGE] Edit `.sage/last_plan.json` then run `sage run --resume` from this repo."
+                )
+                raise PlanEditRequestedError("Plan edit requested.")
             input("\n[SAGE] Press Enter to continue...")
     elif state.get("mode") == "auto":
         # Auto mode: do not block and do not spam console output.
@@ -894,11 +992,14 @@ def merge_task_updates(state: SAGEState) -> SAGEState:
     """
     Apply per-task deltas emitted by `task_worker` back into the shared DAG.
     """
+    import os
+
     graph = _rebuild_task_graph(state.get("task_dag", {}))
     artifacts_by_task = state.get("artifacts_by_task") or {}
     arch_map = state.get("architect_blueprints_by_task") or {}
 
     updates = state.get("task_updates") or []
+    fresh_parallel_blocks: list[str] = []
     for upd in updates:
         task_id = upd.get("task_id", "")
         if not task_id:
@@ -915,6 +1016,10 @@ def merge_task_updates(state: SAGEState) -> SAGEState:
                 setattr(task, k, v)
 
         new_status = getattr(task, "status", "")
+        le_upd = str(upd.get("last_error") or "")
+        if new_status == "blocked" and old_status != "blocked":
+            if "lock" in le_upd.lower() or "busy" in le_upd.lower():
+                fresh_parallel_blocks.append(task_id)
         if new_status != old_status:
             try:
                 from sage.observability.structured_logger import log_event
@@ -941,6 +1046,37 @@ def merge_task_updates(state: SAGEState) -> SAGEState:
         # Task-scoped errors only: keep the most recent one as a summary.
         if upd.get("last_error"):
             state["last_error"] = str(upd.get("last_error"))
+
+    # Parallel scheduling: surface file-lock conflicts once per task (§9 UX).
+    announced = set(state.get("parallel_blocked_announced_ids") or [])
+    blocked_now = [t for t in fresh_parallel_blocks if t not in announced]
+    if blocked_now and (os.environ.get("SAGE_PARALLEL_CONFLICT_UI", "1") or "").strip() != "0":
+        try:
+            from rich.panel import Panel
+
+            from sage.cli.branding import get_console
+
+            body = (
+                "[muted]Parallel workers blocked on file coordination.[/muted]\n"
+                f"[accent]Tasks:[/accent] {', '.join(blocked_now)}\n"
+                "[muted]Remediation:[/muted] rerun with lower parallelism or serialize writes; "
+                "blocked tasks may become ready on the next scheduler pass."
+            )
+            get_console().print(
+                Panel.fit(
+                    body,
+                    title="[bold #f97316]Parallel conflict[/bold #f97316]",
+                    border_style="#ea580c",
+                    padding=(0, 1),
+                )
+            )
+        except Exception:
+            print(
+                f"[SAGE] Parallel conflict — blocked tasks: {', '.join(blocked_now)} "
+                "(retry or reduce parallelism)."
+            )
+        announced.update(blocked_now)
+        state["parallel_blocked_announced_ids"] = sorted(announced)
 
     return {
         **state,
@@ -1054,6 +1190,12 @@ def execute_agent(state: SAGEState) -> SAGEState:
         memory = dict(state.get("session_memory") or {})
         memory["architect_blueprint"] = (state.get("architect_blueprints_by_task") or {}).get(
             task.id, {}
+        )
+        feed = state.get("insight_feed")
+        memory["intel_force_fallback"] = bool(
+            feed is not None
+            and hasattr(feed, "should_preempt")
+            and feed.should_preempt(task.id)
         )
         coder_result = coder.run(
             task={
@@ -1365,12 +1507,12 @@ def tool_executor(state: SAGEState) -> SAGEState:
             "last_error": "",
         }
 
-    # Human Checkpoint 4 — Pre-deploy.
-    # Before destructive operations in research mode.
-    if state.get("mode") == "research" and getattr(patch_req, "operation", "") in {
-        "delete",
-        "run_command",
-    }:
+    # Human Checkpoint 4 — Pre-deploy / sensitive paths (research mode).
+    from sage.orchestrator.checkpoints import should_checkpoint_pre_apply
+
+    if state.get("mode") == "research" and should_checkpoint_pre_apply(
+        file_path=patch_req.file, operation=str(getattr(patch_req, "operation", "") or "")
+    ):
         from sage.observability.structured_logger import log_event
 
         log_event(
@@ -1383,7 +1525,7 @@ def tool_executor(state: SAGEState) -> SAGEState:
             },
         )
         ok = safe_human_confirm(
-            f"[SAGE] HUMAN CHECKPOINT 4 (pre-deploy): confirm destructive operation '{patch_req.operation}' on '{patch_req.file}'?",
+            f"[SAGE] HUMAN CHECKPOINT 4 (pre-apply): confirm '{patch_req.operation}' on '{patch_req.file}'?",
             default_yes=True,
         )
         if not ok:
@@ -1636,14 +1778,32 @@ def verification_gate(state: SAGEState) -> SAGEState:
             "fix_pattern_applied": False,
         }
 
-    # Ensure tests exist for Python implementation artifacts only (manifest tasks like
-    # requirements.txt are verified solely via task.verification — TestEngineer skips non-.py).
     from pathlib import Path
 
-    emit_guard = dict(state.get("_test_emit_guard") or {})
-    _emits = int(emit_guard.get(task.id, 0))
     test_file = str(Path("tests") / f"test_{Path(artifact_file).stem}.py")
     test_path = Path(test_file)
+
+    # Epistemic: [UNVERIFIED] blocks completion until a non-empty test module exists.
+    ep_blob = " ".join(getattr(task, "epistemic_flags", []) or []).upper()
+    if "UNVERIFIED" in ep_blob and Path(artifact_file).suffix.lower() == ".py":
+        if not test_path.exists() or not test_path.read_text(errors="ignore").strip():
+            state["last_error"] = (
+                "Epistemic [UNVERIFIED]: add tests (e.g. tests/test_<module>.py) before completing."
+            )
+            return {
+                **state,
+                "task_dag": graph.to_dict(),
+                "execution_result": {"status": "error", "file": artifact_file},
+                "fix_pattern_hit": False,
+                "fix_pattern_applied": False,
+                "verification_passed": False,
+                "verification_needs_tool_apply": False,
+            }
+
+    # Ensure tests exist for Python implementation artifacts only (manifest tasks like
+    # requirements.txt are verified solely via task.verification — TestEngineer skips non-.py).
+    emit_guard = dict(state.get("_test_emit_guard") or {})
+    _emits = int(emit_guard.get(task.id, 0))
     if Path(artifact_file).suffix.lower() == ".py":
         if not test_path.exists() or not test_path.read_text(errors="ignore").strip():
             if _emits >= 4:
@@ -1707,7 +1867,10 @@ def verification_gate(state: SAGEState) -> SAGEState:
     # Run verification command from the TaskNode.
     verify_cmd = task.verification
     if verify_cmd:
-        verify_result = VerificationEngine().run(verify_cmd)
+        # Always anchor verification to the workspace root (state.repo_path or ".").
+        # Relying on process cwd alone breaks when CWD != project (embeddings, tests, APIs).
+        _workspace_root = str(Path(state.get("repo_path") or ".").resolve())
+        verify_result = VerificationEngine().run(verify_cmd, cwd=_workspace_root)
         if not verify_result["passed"]:
             stderr = verify_result.get("stderr", "") or verify_result.get("stdout", "")
             error = f"Verification failed (rc={verify_result['returncode']}): {stderr[:500]}"

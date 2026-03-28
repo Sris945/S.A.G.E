@@ -26,6 +26,25 @@ def cmd_rules(args: Namespace) -> None:
 
     agent = (args.agent or "coder").strip().lower()
 
+    if args.rules_command == "add":
+        use_global = bool(getattr(args, "global_rules", False))
+        target = (Path.home() / ".sage" / "rules.md") if use_global else (base / ".sage" / "rules.md")
+        bits = getattr(args, "rule_text", None) or []
+        line = " ".join(str(x) for x in bits).strip()
+        if not line:
+            print("[SAGE rules] add: empty text.")
+            raise SystemExit(EX_USAGE)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        prefix = "\n" if target.exists() and target.stat().st_size > 0 else ""
+        try:
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(prefix + line + "\n")
+        except OSError as e:
+            print(f"[SAGE rules] add: could not write {target}: {e}")
+            raise SystemExit(EX_USAGE)
+        print(f"[SAGE rules] Appended to {target.resolve()}")
+        return
+
     if args.rules_command == "validate":
         layers = load_rule_layers(agent_role=agent, base_dir=base)
         warnings = validate_rule_layers(layers)
@@ -62,6 +81,21 @@ def register_rules_parser(sub: Any) -> None:
         help="Show merged USER_RULES or validate rule files (spec §18)",
     )
     rules_sub = rules_p.add_subparsers(dest="rules_command", required=False)
+    add = rules_sub.add_parser(
+        "add",
+        help="Append a rule line to .sage/rules.md (or ~/.sage/rules.md with --global)",
+    )
+    add.add_argument(
+        "rule_text",
+        nargs="+",
+        help="Rule sentence(s) to append",
+    )
+    add.add_argument(
+        "--global",
+        dest="global_rules",
+        action="store_true",
+        help="Append to ~/.sage/rules.md instead of project .sage/rules.md",
+    )
     val = rules_sub.add_parser(
         "validate",
         help="Heuristic check for unsafe or contradictory rule phrases",

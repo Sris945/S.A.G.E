@@ -11,126 +11,145 @@ SAGE is a **Python CLI** built around a **LangGraph-style orchestrator**: specia
 | | |
 |--|--|
 | **Run the full pipeline** | `sage run "Add JWT auth to the API"` — planner → DAG → code → review → tests → verify → memory. |
-| **Skip checkpoints** | `sage run "…" --auto` or `--silent`; `--no-clarify` skips planner Q&A. |
-| **Use the interactive shell** | Run `sage` with no args — `/` opens a command menu, `/chat` starts a local LLM thread (saved under `.sage/chat_sessions/`), natural language can route to chat vs build. |
-| **Swap models** | Edit `src/sage/config/models.yaml` — per-role primary/fallback (Ollama tags, API models). |
-| **Benchmark & RL** | `sage bench`; Phase 5/6: `sage rl …`, `sage sim …` (see **Getting started** below). |
+| **Human checkpoints** | Default **`--research`**: review the plan (`a` / `r` / `e` for approve / reject / edit plan file), then continue. **`--auto`** — fewer interactive gates; **`--silent`** — autonomous, skips failed tasks. **`--no-clarify`** skips planner Q&A. |
+| **Bootstrap a project folder** | `sage init` — creates `.sage/`, `memory/`, default rules, `pytest.ini` hints. Run it **in the repo you want SAGE to edit** (not necessarily the SAGE source tree). |
+| **Use the interactive shell** | Run `sage` with no args — `/` opens a command menu, `/chat` starts a local LLM thread (saved under `.sage/chat_sessions/`). |
+| **Configure models** | Per-role primary/fallback: **`~/.config/sage/models.yaml`** (or `$SAGE_MODELS_YAML`), or bundled defaults — see **`docs/models.md`**. |
+| **Rules & memory** | `sage rules` / `sage rules validate` / `sage rules add "…"`; `sage memory` / `sage memory digest` — see **`docs/CLI.md`**. |
+| **Benchmark & RL** | `sage bench`; `sage rl export`, `train-bc`, `train-cql`; `scripts/train_routing_policy.py` — see **`docs/getting_started.md`**. |
 
 ---
 
 ## Requirements
 
 - **Python 3.10+**
-- **Optional:** [Ollama](https://ollama.com/) for local models (names must match `ollama list` and `models.yaml`)
+- **Optional:** [Ollama](https://ollama.com/) for local models (tags must match `ollama list` and your `models.yaml`)
 
 ---
 
-## Install
+## Install (SAGE repository clone)
+
+**`startup.sh` and `startup.ps1` live only in the SAGE repository root** — not inside arbitrary project directories. Clone or unpack SAGE, then:
 
 ### Option A — bootstrap script (easiest)
 
 | Platform | Steps |
 |----------|--------|
-| **Linux / macOS** | `./startup.sh` then `source .venv/bin/activate` |
+| **Linux / macOS** | From the repo root: `bash startup.sh` then `source .venv/bin/activate` |
 | **Windows** | `.\startup.ps1` then `.\.venv\Scripts\Activate.ps1` |
 
-Creates `.venv`, installs the package in editable mode with dev deps.
+Creates `.venv`, installs the package in editable mode with dev deps (`pip install -e ".[dev,tui]"`).
 
 ### Option B — manual
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -U pip wheel && pip install -e ".[dev]"
+pip install -U pip wheel setuptools && pip install -e ".[dev,tui]"
 ```
 
-### Pull models (Ollama)
+(`[tui]` adds **Textual** for `sage tui`; omit for minimal install: `pip install -e .`)
 
-After `ollama` is installed, pull tags that match your `models.yaml` (example):
+### Pull models (Ollama)
 
 ```bash
 ollama pull qwen2.5-coder:1.5b
 ollama pull nomic-embed-text
 ```
 
-Tiers, VRAM, and troubleshooting **404 model not found** → **[`docs/models.md`](docs/models.md)**.
+Tiers, VRAM, and **404 model not found** → **[`docs/models.md`](docs/models.md)**.
 
 ---
 
-## First steps
+## Your project directory (typical flow)
+
+SAGE edits **the current working directory**. For a new sandbox:
 
 ```bash
-sage doctor          # environment, optional Ollama checks
-sage                 # interactive shell — try /commands
-sage run "Scaffold a minimal FastAPI app with /health" --auto
-sage status          # last session snapshot (memory/system_state.json)
+mkdir -p ~/myproject && cd ~/myproject
+sage init          # .sage/, memory/, rules scaffold
+export SAGE_MODEL_PROFILE=test   # optional: one small Ollama model for every role (laptop/CI)
+sage doctor        # Python, venv hint, Ollama, models.yaml
+sage run "Create src/hello.py with greet() and tests/test_hello.py" --auto
 ```
 
-**In-shell doc links:** after `/commands`, SAGE prints links to this repo’s docs. Set:
+- **`SAGE_MODEL_PROFILE=test`** — forces the test profile in bundled/user `models.yaml` (good when you want a single small local model).
+- After each run, metrics are written to **`.sage/last_run_metrics.json`** (session id, task counts, model histogram, etc.). Set **`SAGE_RUN_OUTPUT=full`** for more detail in the end-of-run report; **`debug`** prints verbose verify lines.
 
-`export SAGE_REPO_URL=https://github.com/your-org/your-fork`
+Full env reference → **[`docs/CLI.md`](docs/CLI.md)**. Install details → **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
-so those URLs point at your canonical GitHub tree.
+---
+
+## First steps (after install)
+
+```bash
+cd /path/to/SAGE          # your clone
+source .venv/bin/activate
+sage doctor               # environment + optional Ollama checks
+sage                      # interactive shell — try /commands
+sage run "Scaffold a minimal FastAPI app with /health" --auto
+sage status               # session snapshot (memory/system_state.json)
+```
+
+**Doc links in the shell:** set `export SAGE_REPO_URL=https://github.com/your-org/your-fork` so `/commands` footer URLs point at your fork.
 
 ---
 
 ## Interactive shell (high level)
 
-- Built on **prompt_toolkit**: type **`/`** to open completions, filter commands, **Enter** to submit the line (not “run on every keypress” — the buffer updates live, dispatch is line-based).
-- **`/chat`** / **`start chat`** — multi-turn chat with a small local model; transcript can be **prepended** to the next `sage run` / NL build (see **`SAGE_CHAT_ATTACH_TO_RUN`** in **[`docs/CLI.md`](docs/CLI.md)**).
-- **`agent`** / **`agent clear`** — reminders for build mode vs clearing attached chat context.
-
-Full list of env vars (`SAGE_SHELL_*`, `SAGE_CHAT_*`, intent routing) → **[`docs/CLI.md`](docs/CLI.md)**.
+- Built on **prompt_toolkit**: type **`/`** for completions; **Enter** submits the line.
+- **`/chat`** — multi-turn local LLM thread; can attach to the next run via **`SAGE_CHAT_ATTACH_TO_RUN`** (see **`docs/CLI.md`**).
+- **`agent`** / **`agent clear`** — build mode reminders and clearing attached chat context.
 
 ---
 
 ## Architecture (at a glance)
 
-- **Orchestrator:** `src/sage/orchestrator/workflow.py` — main state machine.
-- **Routing:** `src/sage/orchestrator/model_router.py` — chooses model per agent role.
-- **Agents:** `src/sage/agents/` — planner, coder, reviewer, debugger, architect, test engineer, …
-- **Execution:** `src/sage/execution/` — tools, verification.
-- **Memory & RAG:** `src/sage/memory/` — layers, docs retrieval where enabled.
-- **CLI:** `src/sage/cli/` — `sage` entrypoint, shell, chat, branding.
+- **Orchestrator:** `src/sage/orchestrator/workflow.py`
+- **Routing:** `src/sage/orchestrator/model_router.py`
+- **Agents:** `src/sage/agents/`
+- **Execution:** `src/sage/execution/`
+- **Memory & RAG:** `src/sage/memory/`
+- **CLI:** `src/sage/cli/`
 
-Diagrams and deeper notes → **[`docs/architecture.md`](docs/architecture.md)** and **[`docs/architecture_diagram.md`](docs/architecture_diagram.md)**. Event bus → **[`docs/event_bus.md`](docs/event_bus.md)**.
+**Spec vs shipped features:** **[`docs/ARCHITECTURE_STATUS.md`](docs/ARCHITECTURE_STATUS.md)** — use this for implementation truth vs long-form architecture docs.
+
+Diagrams → **[`docs/architecture.md`](docs/architecture.md)**, **[`docs/architecture_diagram.md`](docs/architecture_diagram.md)**. Events → **[`docs/event_bus.md`](docs/event_bus.md)**.
 
 ---
 
 ## Documentation map
 
-Use this repo’s **`docs/`** folder for depth; you don’t need a separate “docs README only” story — the files below are the real guides:
-
 | Guide | What it covers |
 |-------|----------------|
-| **[`docs/INSTALL.md`](docs/INSTALL.md)** | Bootstrap scripts, Windows vs Linux, pip details |
-| **[`docs/CLI.md`](docs/CLI.md)** | Slash REPL, prompt_toolkit, `SAGE_SHELL_*`, chat attach |
-| **[`docs/models.md`](docs/models.md)** | `models.yaml`, Ollama tags, VRAM tiers, bench timeouts |
-| **[`docs/getting_started.md`](docs/getting_started.md)** | `sage bench`, `sage rl`, `sage sim` command lists |
-| **[`docs/architecture.md`](docs/architecture.md)** | Design entrypoints and pointers |
-| **[`docs/TRUST_AND_SCALE.md`](docs/TRUST_AND_SCALE.md)** | Policy, trust, scaling notes |
-| **[`docs/LIVE_TESTING.md`](docs/LIVE_TESTING.md)** | Real Ollama verification, `scripts/live_verify.sh` |
-| **[`CONTRIBUTING.md`](CONTRIBUTING.md)** | Tests, CI, how to contribute |
+| **[`docs/INSTALL.md`](docs/INSTALL.md)** | Bootstrap scripts, Windows vs Linux, pip |
+| **[`docs/CLI.md`](docs/CLI.md)** | Shell, env vars, rules, memory digest, run output |
+| **[`docs/models.md`](docs/models.md)** | `models.yaml`, Ollama tags, VRAM, bench timeouts |
+| **[`docs/getting_started.md`](docs/getting_started.md)** | `bench`, `rl`, `sim`, training script |
+| **[`docs/ARCHITECTURE_STATUS.md`](docs/ARCHITECTURE_STATUS.md)** | Spec parity / feature status |
+| **[`docs/architecture.md`](docs/architecture.md)** | Design entrypoints |
+| **[`docs/TRUST_AND_SCALE.md`](docs/TRUST_AND_SCALE.md)** | Policy, trust |
+| **[`docs/LIVE_TESTING.md`](docs/LIVE_TESTING.md)** | Live Ollama, `scripts/live_verify.sh` |
+| **[`CONTRIBUTING.md`](CONTRIBUTING.md)** | Tests, CI |
 
-**[`docs/README.md`](docs/README.md)** is a short index of the same paths for browsing on GitHub.
+**[`docs/README.md`](docs/README.md)** — short index of `docs/`.
 
 ---
 
 ## Repository layout
 
-Abbreviated; full tree → **[`project_structure.md`](project_structure.md)**.
-
 ```
-src/sage/          # Application package (CLI, orchestrator, agents, memory, rl, sim, …)
-docs/              # All guides (architecture, models, CLI, install, …)
+src/sage/          # Application package (CLI, orchestrator, agents, memory, rl, …)
+docs/              # Guides
 tests/             # pytest
-scripts/           # Local verification helpers
-startup.sh / .ps1  # Optional venv + editable install
+scripts/           # Helpers (e.g. train_routing_policy.py)
+pyproject.toml     # Packaging
+startup.sh / .ps1  # Run from repo root only
 ```
+
+Full tree → **[`project_structure.md`](project_structure.md)**.
 
 ---
 
 ## Contributing
 
 See **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — unit tests, benchmarks, live Ollama bar.
-
----

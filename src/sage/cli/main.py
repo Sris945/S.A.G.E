@@ -5,19 +5,22 @@ SAGE CLI Entry Point
 Usage:
   sage                          # TTY: interactive shell (activation); else help
   sage commands                 # full command catalog (same as /commands in shell)
-  sage init                     # scaffold .sage/ + memory/ in this folder
-  sage run "your prompt"        # run pipeline
-  sage run "prompt" --auto      # no human checkpoints except circuit breaker
-  sage run "prompt" --silent    # fully autonomous, skip failed tasks
+  sage init                     # scaffold .sage/ + memory/ in cwd (not the same as ./startup.sh)
+  sage run "your prompt"        # full pipeline; metrics → .sage/last_run_metrics.json
+  sage run "prompt" --auto      # fewer human checkpoints than default --research
+  sage run "prompt" --silent    # autonomous; skip failed tasks per policy
   sage run "goal" --plan-only   # DAG only; sage run --fresh ignores handoff
   sage status                   # show current session state
-  sage memory                   # inspect memory layers
-  sage rules                    # show merged USER_RULES; sage rules validate
+  sage memory                   # list memory/ tree; sage memory digest → weekly_digest.md
+  sage rules                    # merged USER_RULES; sage rules validate; sage rules add "…"
   sage permissions              # show policy; `permissions set …` persists in .sage/policy.json
-  sage bench                    # run benchmark suite (Phase 4)
-  sage bench --compare-policy   # static vs learned routing (Phase 5)
-  sage rl export / train-bc     # offline RL dataset + BC (Phase 5)
+  sage doctor                   # Python, venv, Ollama, models.yaml, optional TUI deps
+  sage bench                    # benchmark suite
+  sage bench --compare-policy   # static vs learned routing (needs RL checkpoints)
+  sage rl export / train-bc / train-cql   # offline RL dataset + trainers
   sage sim generate / run       # oracle tasks + parallel pytest (Phase 6)
+
+Models: edit ~/.config/sage/models.yaml (or SAGE_MODELS_YAML). Laptop/CI: SAGE_MODEL_PROFILE=test
 
 Interactive shell: ``/help``, ``/commands``, ``/skill``, ``/model``, ``/context``, ``/clear``.
 Commands run in-process (no subprocess per line).
@@ -242,6 +245,36 @@ def cmd_init(args) -> None:
         c.print(f"  [accent]~[/accent] {p}")
     c.print(f"  [muted]Root:[/muted] {summary.get('root')}")
     c.print()
+    try:
+        from rich.panel import Panel
+
+        nxt = (
+            "[muted]Install / upgrade SAGE from your clone:[/muted] "
+            "[accent]cd /path/to/SAGE && bash startup.sh && source .venv/bin/activate[/accent]\n"
+            "[muted]([/muted][accent]startup.sh[/accent][muted] lives in the repo — not in this project folder.)[/muted]\n\n"
+            "[muted]From this folder, run a small greenfield job[/muted] (needs Ollama or your configured models):\n\n"
+            "  [accent]sage run[/accent] "
+            "[muted]\"Create src/hello.py with a function greet() that returns 'hello'\"[/muted]\n\n"
+            "[muted]Laptop / CI — one small local model for every role:[/muted]\n"
+            "  [accent]export SAGE_MODEL_PROFILE=test[/accent]\n\n"
+            "[muted]Health check:[/muted] [accent]sage doctor[/accent]   "
+            "[muted]·  Guide:[/muted] [accent]docs/getting_started.md[/accent]"
+        )
+        c.print(
+            Panel.fit(
+                nxt,
+                title="[brand]Next[/brand]",
+                border_style="#0f766e",
+                padding=(0, 1),
+            )
+        )
+        c.print()
+    except Exception:
+        print(
+            "[SAGE] Next: sage doctor\n"
+            "       sage run \"Create src/hello.py …\"\n"
+            "       See docs/getting_started.md\n"
+        )
 
 
 def cmd_doctor(args) -> None:
@@ -488,7 +521,17 @@ def build_parser(*, exit_on_error: bool = True) -> argparse.ArgumentParser:
         "commands",
         help="Print the full command catalog (same as /commands in the interactive shell)",
     )
-    sub.add_parser("memory", help="Inspect memory layers")
+    mem_p = sub.add_parser("memory", help="Inspect memory layers or write a digest")
+    mem_sub = mem_p.add_subparsers(dest="memory_command", required=False)
+    mem_dig = mem_sub.add_parser(
+        "digest",
+        help="Aggregate session logs + fix patterns into memory/weekly_digest.md",
+    )
+    mem_dig.add_argument(
+        "--out",
+        default="memory/weekly_digest.md",
+        help="Output markdown path (default: memory/weekly_digest.md)",
+    )
     register_rules_parser(sub)
     perm_p = sub.add_parser(
         "permissions",
@@ -781,7 +824,15 @@ def _dispatch_command_impl(args: argparse.Namespace, parser: argparse.ArgumentPa
     elif args.command == "status":
         cmd_status(args)
     elif args.command == "memory":
-        cmd_memory(args)
+        if getattr(args, "memory_command", None) == "digest":
+            from pathlib import Path
+
+            from sage.memory.digest import write_digest
+
+            out = write_digest(Path(getattr(args, "out", "memory/weekly_digest.md")))
+            print(f"[SAGE] Wrote digest: {out.resolve()}")
+        else:
+            cmd_memory(args)
     elif args.command == "rules":
         cmd_rules(args)
     elif args.command == "permissions":

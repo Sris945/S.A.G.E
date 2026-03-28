@@ -7,8 +7,9 @@ This page is a **compact index** of files in `docs/`:
 | File | Topic |
 |------|--------|
 | [INSTALL.md](INSTALL.md) | Clone, `startup.sh` / `startup.ps1`, venv |
-| [CLI.md](CLI.md) | Interactive shell, slash commands, env vars |
-| [getting_started.md](getting_started.md) | `bench`, `rl`, `sim` commands |
+| [CLI.md](CLI.md) | `sage run`, shell, rules, memory, env vars |
+| [getting_started.md](getting_started.md) | Init + run flow; `bench`, `rl`, `sim` |
+| [ARCHITECTURE_STATUS.md](ARCHITECTURE_STATUS.md) | Spec vs shipped features |
 | [architecture.md](architecture.md) | Design entrypoints |
 | [architecture_diagram.md](architecture_diagram.md) | Diagrams |
 | [models.md](models.md) | Ollama, `models.yaml`, VRAM |

@@ -3,6 +3,13 @@ SAGE Memory Manager
 -------------------
 Central interface for all memory reads/writes.
 Agents never access memory directly — everything routes through here.
+
+Retrieval order for prompts (3-layer, spec §16):
+
+1. **System / session state** — ``load_state()`` (``memory/system_state.json``).
+2. **Project memory** — session journal, handoff, ``.sage-memory.md`` (via session hooks).
+3. **RAG / patterns** — fix patterns and codebase index (wired in orchestrator and
+   ``prefix_builder`` / docs RAG), applied after the static layers above.
 """
 
 import json
