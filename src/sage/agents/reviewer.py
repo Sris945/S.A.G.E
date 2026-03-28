@@ -79,12 +79,29 @@ def _is_tests_package_file(file: str) -> bool:
     )
 
 
+def _is_src_application_py(file: str) -> bool:
+    """Greenfield app modules: LLM reviewer often hallucinates 'empty file' (log: H1 vs non-empty read)."""
+    fp = str(file).replace("\\", "/")
+    pl = Path(fp)
+    if pl.suffix.lower() != ".py" or not fp.startswith("src/"):
+        return False
+    name = pl.name
+    if name.startswith("test_") or name == "conftest.py":
+        return False
+    return True
+
+
 def _reviewer_skip_llm_log_line(file: str) -> str:
-    """If non-empty, skip LLM review and log this line (models hallucinate on manifests/tests)."""
+    """If non-empty, skip LLM review and log this line (small models hallucinate on these paths)."""
     if _short_manifest_ok(file):
         return "Dependency manifest — static + goal checks only (LLM skipped)."
     if _is_tests_package_file(file):
         return "pytest file — static + goal checks only (LLM skipped)."
+    if _is_src_application_py(file):
+        return (
+            "src Python module — static + goal checks only (LLM skipped; "
+            "planner verify validates imports/behavior)."
+        )
     return ""
 
 

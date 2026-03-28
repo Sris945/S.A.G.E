@@ -38,6 +38,11 @@ class TestReviewerGoalAlignment(unittest.TestCase):
     def test_skip_llm_for_tests_path(self):
         self.assertIn("pytest", _reviewer_skip_llm_log_line("tests/test_app.py").lower())
 
+    def test_skip_llm_for_src_app_module(self):
+        line = _reviewer_skip_llm_log_line("src/app.py")
+        self.assertTrue(line)
+        self.assertIn("src", line.lower())
+
     def test_helper_detects_missing_fastapi(self):
         issues = _goal_alignment_issues(
             "Implement FastAPI with GET /health in src/app.py",
