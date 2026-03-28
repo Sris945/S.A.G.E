@@ -831,8 +831,6 @@ def _dispatch_command_impl(args: argparse.Namespace, parser: argparse.ArgumentPa
         cmd_status(args)
     elif args.command == "memory":
         if getattr(args, "memory_command", None) == "digest":
-            from pathlib import Path
-
             from sage.memory.digest import write_digest
 
             out = write_digest(Path(getattr(args, "out", "memory/weekly_digest.md")))
