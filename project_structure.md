@@ -9,6 +9,7 @@ High-level map for contributors and readers. Source of truth for behavior is the
 ├── pyproject.toml            # Package metadata, [tool.ruff], sage console script
 ├── startup.sh / startup.ps1  # Optional venv + editable install
 ├── docs/                     # User and developer docs — index: docs/README.md
+├── images/                   # README screenshots (optional)
 ├── sage plan/                # SAGE_ARCHITECTURE_V1_FINAL.md (locked design spec)
 ├── scripts/                  # Local verification, release helpers
 ├── tests/                    # pytest unit + integration + e2e

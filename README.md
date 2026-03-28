@@ -1,8 +1,38 @@
+<div align="center">
+
 # SAGE
 
-**Self-improving Autonomous Generation Engine** — turn a plain-English goal into a plan, code, tests, and verification.
+### Self-improving Autonomous Generation Engine
 
-SAGE is a **Python CLI** built around a **LangGraph-style orchestrator**: specialized agents (planner, coder, reviewer, test engineer, …), a **model router** (`models.yaml`), multi-layer **memory**, and optional **Ollama** for local LLMs. You can drive it from a **TTY shell** (slash commands, chat threads, intent routing) or headless with `sage run`.
+*prompt → production*
+
+**Turn a plain-English goal into a plan, code, tests, and verification.**
+
+<br/>
+
+<img src="images/SAGE" alt="SAGE — autonomous run overview" width="92%" />
+
+<br/>
+
+</div>
+
+SAGE is a **Python CLI** built around a **LangGraph-style orchestrator**: specialized agents (planner, coder, reviewer, test engineer, …), a **model router** (`models.yaml`), multi-layer **memory**, and optional **Ollama** for local LLMs. Drive it from a **TTY shell** (slash commands, chat threads, intent routing) or headless with `sage run`.
+
+---
+
+## Screenshots
+
+| Interactive shell · `/commands` | Model routing & profiles |
+|:--:|:--:|
+| <img src="images/Commands" alt="Slash commands and shell" width="100%" /> | <img src="images/Model" alt="Model routing" width="100%" /> |
+| **Skills & `/skill` discovery** | **Pipeline · run header** |
+| <img src="images/Skills" alt="Skills panel" width="100%" /> | <img src="images/screenshot-01.png" alt="SAGE run flow" width="100%" /> |
+
+| More views |
+|:--:|
+| <img src="images/screenshot-02.png" alt="SAGE screenshot" width="49%" /> &nbsp; <img src="images/screenshot-03.png" alt="SAGE screenshot" width="49%" /> |
+
+*Replace or add files under [`images/`](images/) — paths are relative to this README.*
 
 ---
 
@@ -146,6 +176,7 @@ Diagrams → **[`docs/architecture.md`](docs/architecture.md)**, **[`docs/archit
 ```
 src/sage/          # Application package (CLI, orchestrator, agents, memory, rl, …)
 docs/              # Guides
+images/            # README screenshots (this folder)
 tests/             # pytest
 scripts/           # Helpers (e.g. train_routing_policy.py)
 pyproject.toml     # Packaging
@@ -153,6 +184,25 @@ startup.sh / .ps1  # Run from repo root only
 ```
 
 Full tree → **[`project_structure.md`](project_structure.md)**.
+
+---
+
+## Star rating
+
+If SAGE fits your workflow, show support with a **star** on the repository — it helps others discover the project.
+
+<p align="center"><b>★ ★ ★ ★ ★</b><br/><sub>Community appreciation — not a formal score.</sub></p>
+
+---
+
+## Commit history
+
+Recent work is always visible in Git:
+
+- On **GitHub**: open your fork → **Commits** (URL ends with `/commits`).
+- From the CLI (in a clone): `git log --oneline -20`
+
+There is no separate changelog file by default; use the commit log and **[`docs/release_checklist.md`](docs/release_checklist.md)** when cutting releases.
 
 ---
 
