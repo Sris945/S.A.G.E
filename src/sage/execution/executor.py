@@ -17,6 +17,7 @@ from pathlib import Path
 
 from sage.execution.exceptions import SafetyViolation
 from sage.execution.tool_policy import DENY_SUBSTRINGS, check_run_command_policy, parse_command_argv
+from sage.debug_mode_log import agent_debug_log
 from sage.execution.workspace_policy import default_workspace_roots, path_is_under_workspace
 from sage.protocol.schemas import PatchRequest
 
@@ -98,6 +99,19 @@ class ToolExecutionEngine:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(req.patch)
+                # #region agent log
+                rb = path.read_text() if path.exists() else ""
+                agent_debug_log(
+                    "executor.py:create",
+                    "patch_written_create",
+                    data={
+                        "file": str(path.resolve()),
+                        "patch_len": len(req.patch or ""),
+                        "readback_len": len(rb),
+                    },
+                    hypothesis_id="H3_H4",
+                )
+                # #endregion
                 return {"status": "ok", "operation": "create", "file": str(path)}
             finally:
                 lock.release()
@@ -114,6 +128,19 @@ class ToolExecutionEngine:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(req.patch)
+                # #region agent log
+                rb = path.read_text() if path.exists() else ""
+                agent_debug_log(
+                    "executor.py:edit",
+                    "patch_written_edit",
+                    data={
+                        "file": str(path.resolve()),
+                        "patch_len": len(req.patch or ""),
+                        "readback_len": len(rb),
+                    },
+                    hypothesis_id="H3_H4",
+                )
+                # #endregion
                 return {"status": "ok", "operation": "edit", "file": str(path)}
             finally:
                 lock.release()
