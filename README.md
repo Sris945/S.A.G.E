@@ -191,15 +191,9 @@ If SAGE fits your workflow, show support with a **star** on the repository — i
 
 ---
 
-## Commit history
+## Repository Activity
 
-Recent work is always visible in Git:
-
-- On **GitHub**: open your fork → **Commits** (URL ends with `/commits`).
-- From the CLI (in a clone): `git log --oneline -20`
-
-There is no separate changelog file by default; use the commit log and **[`docs/release_checklist.md`](docs/release_checklist.md)** when cutting releases.
-
+![SAGE Commit Activity](https://github-readme-stats.vercel.app/api/pin/?username=Sris945&repo=S.A.G.E)
 ---
 
 ## Contributing
