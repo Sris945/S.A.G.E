@@ -25,14 +25,10 @@ SAGE is a **Python CLI** built around a **LangGraph-style orchestrator**: specia
 | Interactive shell · `/commands` | Model routing & profiles |
 |:--:|:--:|
 | <img src="images/Commands" alt="Slash commands and shell" width="100%" /> | <img src="images/Model" alt="Model routing" width="100%" /> |
-| **Skills & `/skill` discovery** | **Pipeline · run header** |
-| <img src="images/Skills" alt="Skills panel" width="100%" /> | <img src="images/screenshot-01.png" alt="SAGE run flow" width="100%" /> |
+| **Skills & `/skill` discovery** | **`sage memory` — memory layers** |
+| <img src="images/Skills" alt="Skills panel" width="100%" /> | <img src="images/Memory" alt="SAGE memory layers listing" width="100%" /> |
 
-| More views |
-|:--:|
-| <img src="images/screenshot-02.png" alt="SAGE screenshot" width="49%" /> &nbsp; <img src="images/screenshot-03.png" alt="SAGE screenshot" width="49%" /> |
-
-*Replace or add files under [`images/`](images/) — paths are relative to this README.*
+Five static assets live in [`images/`](images/) (`Commands`, `Memory`, `Model`, `SAGE`, `Skills`).
 
 ---
 

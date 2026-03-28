@@ -66,4 +66,10 @@ Thumbs.db
 # Track docs/
 !docs/
 
-images/
+# README screenshots: only these five filenames under images/ are tracked; ignore anything else.
+images/*
+!images/Commands
+!images/Memory
+!images/Model
+!images/SAGE
+!images/Skills1    1
